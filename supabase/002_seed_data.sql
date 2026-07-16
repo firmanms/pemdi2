@@ -74,7 +74,7 @@ END $$;
 
 -- ---- Insert Demo Instansi ----
 INSERT INTO instansi (id, nama, kode, tingkat) VALUES
-  ('d0000001-0000-0000-0000-000000000001', 'Kota Bandung', 'KOTA-BDG', 'kota');
+  ('d0000001-0000-0000-0000-000000000001', 'Kabupaten Bandung', 'KOTA-BDG', 'kota');
 
 -- ---- Insert Demo Perangkat Daerah ----
 INSERT INTO perangkat_daerah (id, instansi_id, nama, kode, jenis) VALUES

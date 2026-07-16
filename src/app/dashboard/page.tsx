@@ -32,7 +32,7 @@ export default function DashboardPage() {
   useEffect(() => {
     async function loadDashboardData() {
       if (!user || !activePeriode) return
-      
+
       try {
         setLoading(true)
         // 1. Calculate indeks & aspek scores
@@ -44,7 +44,7 @@ export default function DashboardPage() {
           .from('penilaian_opd')
           .select('status')
           .eq('periode_id', activePeriode.id)
-        
+
         const totalSubmissions = opdPenilaians?.filter(p => p.status === 'terkirim').length || 0
         const totalPossibleSubmissions = (availableOPDs.length * 20) || 1
         const progressPercent = (totalSubmissions / totalPossibleSubmissions) * 100
@@ -101,7 +101,7 @@ export default function DashboardPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Ringkasan Indeks Pemerintah Digital — Kota Bandung
+          Ringkasan Indeks Pemerintah Digital — Kabupaten Bandung
         </p>
       </div>
 

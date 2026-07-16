@@ -14,7 +14,7 @@ async function seedRemote() {
     let instansiId = instansiData?.[0]?.id
     if (!instansiId) {
       const { data: newInst, error: newInstErr } = await supabase.from('instansi').insert([
-        { nama: 'Kota Bandung', kode: 'KOTA-BDG', tingkat: 'kota' }
+        { nama: 'Kabupaten Bandung', kode: 'KOTA-BDG', tingkat: 'kota' }
       ]).select()
       if (newInstErr) {
         console.error('Failed to insert instansi:', newInstErr)

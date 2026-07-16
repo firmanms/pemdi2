@@ -1,726 +1,1332 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useMemo, useState, useRef } from "react"
 import Link from "next/link"
 import {
-  Sparkles,
-  Search,
+  Activity,
+  ArrowRight,
+  Award,
+  BarChart3,
   BookOpen,
-  FileText,
+  Building2,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Download,
   ExternalLink,
-  ChevronRight,
+  FileText,
+  Gauge,
+  Layers3,
+  LayoutGrid,
+  ListFilter,
+  Menu,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Target,
   TrendingUp,
-  Award,
-  Layers,
-  ArrowRight,
-  HelpCircle,
-  Activity,
-  FileDown
+  X,
 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
 import {
-  ResponsiveContainer,
-  LineChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
   Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  Tooltip,
-  CartesianGrid,
-  BarChart,
-  Bar,
-  Cell
 } from "recharts"
+
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
-import { supabase } from "@/lib/supabase/client"
 import { hitungIndeksKalkulator } from "@/lib/scoring"
+import { supabase } from "@/lib/supabase/client"
 import type { Aspek, Indikator, RubrikLevel } from "@/lib/types"
 
-// Local landing page content loaded dynamically
+type TrendItem = {
+  id?: string
+  tahun: number | string
+  indeks: number
+  kategori?: string | null
+}
+
+type KnowledgeDocument = {
+  id: string
+  judul: string
+  kategori?: string | null
+  tipe?: string | null
+  ukuran?: string | null
+  created_at?: string | null
+  file_url?: string | null
+  url?: string | null
+  link?: string | null
+}
+
+type LiveIndex = {
+  skor_1_5?: number
+  predikat?: string
+}
+
+type ViewMode = "fokus" | "matriks"
+
+const DOCUMENT_TABS = ["Semua", "Kebijakan", "Penerapan", "Evaluasi", "Materi"]
+
+const MATURITY_LEVELS = [
+  { level: 1, name: "Initiate", label: "Rintisan", range: "1,00–1,49" },
+  { level: 2, name: "Emerging", label: "Berkembang", range: "1,50–2,49" },
+  { level: 3, name: "Developing", label: "Terdefinisi", range: "2,50–3,49" },
+  { level: 4, name: "Embedded", label: "Terkelola", range: "3,50–4,49" },
+  { level: 5, name: "Leading", label: "Optimal", range: "4,50–5,00" },
+]
+
+function safeNumber(value: unknown, fallback = 0) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function formatScore(value: unknown) {
+  return safeNumber(value).toFixed(2)
+}
+
+function getCategoryClasses(category?: string | null) {
+  const value = category?.toLowerCase() ?? ""
+
+  if (value.includes("memuaskan") || value.includes("sangat baik") || value.includes("optimal")) {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700"
+  }
+
+  if (value.includes("baik") || value.includes("terkelola")) {
+    return "border-cyan-200 bg-cyan-50 text-cyan-700"
+  }
+
+  if (value.includes("cukup") || value.includes("berkembang") || value.includes("terdefinisi")) {
+    return "border-blue-200 bg-blue-50 text-blue-700"
+  }
+
+  if (value.includes("kurang") || value.includes("rintisan") || value.includes("initiate")) {
+    return "border-amber-200 bg-amber-50 text-amber-700"
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-600"
+}
+
+function getDocumentUrl(document: KnowledgeDocument) {
+  return document.file_url || document.url || document.link || ""
+}
+
+function RichContent({ html, fallback = "Informasi belum tersedia." }: { html?: string | null; fallback?: string }) {
+  if (!html) {
+    return <p className="text-sm leading-7 text-slate-400">{fallback}</p>
+  }
+
+  return (
+    <div
+      className="text-sm leading-7 text-slate-600 [&_a]:font-semibold [&_a]:text-indigo-600 [&_a]:underline [&_li]:mb-1.5 [&_ol]:ml-5 [&_ol]:list-decimal [&_p]:mb-3 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_strong]:text-slate-800 [&_ul]:ml-5 [&_ul]:list-disc"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  )
+}
+
+function EmptyChart({ title }: { title: string }) {
+  return (
+    <div className="flex h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 text-center">
+      <BarChart3 className="mb-3 h-8 w-8 text-slate-300" />
+      <p className="text-sm font-semibold text-slate-500">{title}</p>
+      <p className="mt-1 text-xs text-slate-400">Data akan tampil setelah tersedia pada sistem.</p>
+    </div>
+  )
+}
 
 export default function LandingPage() {
-  const [indikators, setIndikators] = useState<Indikator[]>([])
-  const [selectedIndikatorId, setSelectedIndikatorId] = useState<string>("")
-  const [rubrikData, setRubrikData] = useState<RubrikLevel[]>([])
-  
-  // New States for Indikator Section
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const aspectScrollRef = useRef<HTMLDivElement>(null)
+
+  const scrollAspect = (direction: "left" | "right") => {
+    if (aspectScrollRef.current) {
+      const scrollAmount = 300
+      aspectScrollRef.current.scrollBy({
+        left: direction === "left" ? -scrollAmount : scrollAmount,
+        behavior: "smooth",
+      })
+    }
+  }
+
   const [aspeks, setAspeks] = useState<Aspek[]>([])
-  const [selectedAspekId, setSelectedAspekId] = useState<string>("")
-  const [rubrikViewMode, setRubrikViewMode] = useState<"fokus" | "matriks">("fokus")
-  const [selectedLevelId, setSelectedLevelId] = useState<number>(1)
-  
-  const [docTab, setDocTab] = useState<string>("Semua")
-  const [searchDoc, setSearchDoc] = useState<string>("")
-  const [loading, setLoading] = useState(true)
+  const [indikators, setIndikators] = useState<Indikator[]>([])
+  const [rubrikData, setRubrikData] = useState<RubrikLevel[]>([])
 
-  const [spbeTrendData, setSpbeTrendData] = useState<any[]>([])
-  const [pemdiTrendData, setPemdiTrendData] = useState<any[]>([])
-  const [documents, setDocuments] = useState<any[]>([])
-  const [liveIndeks, setLiveIndeks] = useState<any>(null)
+  const [selectedAspekId, setSelectedAspekId] = useState("")
+  const [selectedIndikatorId, setSelectedIndikatorId] = useState("")
+  const [selectedLevelId, setSelectedLevelId] = useState(1)
+  const [rubrikViewMode, setRubrikViewMode] = useState<ViewMode>("fokus")
 
-  // Load landing page content from Supabase
+  const [searchIndikator, setSearchIndikator] = useState("")
+  const [docTab, setDocTab] = useState("Semua")
+  const [searchDoc, setSearchDoc] = useState("")
+
+  const [spbeTrendData, setSpbeTrendData] = useState<TrendItem[]>([])
+  const [pemdiTrendData, setPemdiTrendData] = useState<TrendItem[]>([])
+  const [documents, setDocuments] = useState<KnowledgeDocument[]>([])
+  const [liveIndeks, setLiveIndeks] = useState<LiveIndex | null>(null)
+
+  const [loadingLanding, setLoadingLanding] = useState(true)
+  const [loadingInstrument, setLoadingInstrument] = useState(true)
+  const [loadingRubrik, setLoadingRubrik] = useState(false)
+  const [dataWarning, setDataWarning] = useState("")
+
   useEffect(() => {
-    async function fetchLandingContent() {
-      try {
-        const { data: spbeData } = await supabase.from('spbe_trend').select('*').order('tahun')
-        const { data: pemdiData } = await supabase.from('pemdi_trend').select('*').order('tahun')
-        const { data: docData } = await supabase.from('dokumen_pengetahuan').select('*').order('created_at', { ascending: false })
-        
-        setSpbeTrendData(spbeData || [])
-        setPemdiTrendData(pemdiData || [])
-        setDocuments(docData || [])
+    let active = true
 
-        // Fetch live index for active period (matching auth-context logic: draft or dibuka)
-        const { data: periodes } = await supabase.from('periode_asesmen').select('*')
-        if (periodes && periodes.length > 0) {
-          const active = periodes.find(p => p.status === 'draft' || p.status === 'dibuka') || periodes[0]
-          if (active) {
-            const result = await hitungIndeksKalkulator('', active.id)
-            setLiveIndeks(result)
+    async function fetchLandingContent() {
+      setLoadingLanding(true)
+
+      try {
+        const [spbeResponse, pemdiResponse, documentResponse, periodResponse] = await Promise.all([
+          supabase.from("spbe_trend").select("*").order("tahun"),
+          supabase.from("pemdi_trend").select("*").order("tahun"),
+          supabase.from("dokumen_pengetahuan").select("*").order("created_at", { ascending: false }),
+          supabase.from("periode_asesmen").select("*"),
+        ])
+
+        if (!active) return
+
+        if (spbeResponse.error || pemdiResponse.error || documentResponse.error || periodResponse.error) {
+          setDataWarning("Sebagian data publik belum dapat dimuat. Silakan muat ulang halaman.")
+        }
+
+        setSpbeTrendData((spbeResponse.data as TrendItem[]) || [])
+        setPemdiTrendData((pemdiResponse.data as TrendItem[]) || [])
+        setDocuments((documentResponse.data as KnowledgeDocument[]) || [])
+
+        const periods = periodResponse.data || []
+        const activePeriod =
+          periods.find((period) => period.status === "draft" || period.status === "dibuka") || periods[0]
+
+        if (activePeriod) {
+          try {
+            const result = await hitungIndeksKalkulator("", activePeriod.id)
+            if (active) setLiveIndeks(result as LiveIndex)
+          } catch (error) {
+            console.error("Error calculating live PEMDI index:", error)
           }
         }
-      } catch (e) {
-        console.error("Error loading landing content:", e)
-      }
-    }
-    fetchLandingContent()
-  }, [])
-
-  // Load Aspects and Indicators from Supabase
-  useEffect(() => {
-    async function fetchIndikators() {
-      try {
-        setLoading(true)
-        
-        // Fetch Aspek
-        const { data: aspData, error: aspErr } = await supabase.from("aspek").select("*").order("urutan")
-        if (aspErr) throw aspErr
-        setAspeks(aspData || [])
-        
-        if (aspData && aspData.length > 0) {
-          setSelectedAspekId(aspData[0].id)
-        }
-
-        // Fetch Indikator
-        const { data: indData, error: indErr } = await supabase
-          .from("indikator")
-          .select("*, aspek(*)")
-          .order("urutan")
-        
-        if (indErr) throw indErr
-        setIndikators(indData || [])
-      } catch (e) {
-        console.error("Error fetching indicators/aspeks:", e)
+      } catch (error) {
+        console.error("Error loading landing content:", error)
+        if (active) setDataWarning("Data ringkasan belum dapat dimuat sepenuhnya.")
       } finally {
-        setLoading(false)
+        if (active) setLoadingLanding(false)
       }
     }
-    fetchIndikators()
+
+    fetchLandingContent()
+
+    return () => {
+      active = false
+    }
   }, [])
 
-  // Auto-select first indicator when aspect changes
   useEffect(() => {
-    if (!selectedAspekId || indikators.length === 0) return
-    const filteredInds = indikators.filter(i => i.aspek_id === selectedAspekId)
-    if (filteredInds.length > 0) {
-      setSelectedIndikatorId(filteredInds[0].id)
-    } else {
-      setSelectedIndikatorId("")
+    let active = true
+
+    async function fetchInstrument() {
+      setLoadingInstrument(true)
+
+      try {
+        const [aspectResponse, indicatorResponse] = await Promise.all([
+          supabase.from("aspek").select("*").order("urutan"),
+          supabase.from("indikator").select("*, aspek(*)").order("urutan"),
+        ])
+
+        if (!active) return
+
+        if (aspectResponse.error) throw aspectResponse.error
+        if (indicatorResponse.error) throw indicatorResponse.error
+
+        const aspectItems = (aspectResponse.data as Aspek[]) || []
+        const indicatorItems = (indicatorResponse.data as Indikator[]) || []
+
+        setAspeks(aspectItems)
+        setIndikators(indicatorItems)
+        setSelectedAspekId((current) => {
+          if (current && aspectItems.some((aspect) => aspect.id === current)) return current
+          return aspectItems[0]?.id || ""
+        })
+      } catch (error) {
+        console.error("Error loading PEMDI instrument:", error)
+        if (active) setDataWarning("Instrumen PEMDI belum dapat dimuat sepenuhnya.")
+      } finally {
+        if (active) setLoadingInstrument(false)
+      }
     }
+
+    fetchInstrument()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!selectedAspekId || indikators.length === 0) {
+      setSelectedIndikatorId("")
+      return
+    }
+
+    const aspectIndicators = indikators.filter((indicator) => indicator.aspek_id === selectedAspekId)
+
+    setSelectedIndikatorId((current) => {
+      if (current && aspectIndicators.some((indicator) => indicator.id === current)) return current
+      return aspectIndicators[0]?.id || ""
+    })
+    setSearchIndikator("")
   }, [selectedAspekId, indikators])
 
-  // Load Rubrik for selected indicator
   useEffect(() => {
-    async function fetchRubrik() {
-      if (!selectedIndikatorId) return
+    let active = true
+
+    async function fetchRubric() {
+      if (!selectedIndikatorId) {
+        setRubrikData([])
+        return
+      }
+
+      setLoadingRubrik(true)
+
       try {
         const { data, error } = await supabase
           .from("rubrik_level")
           .select("*")
           .eq("indikator_id", selectedIndikatorId)
           .order("level")
-        
+
         if (error) throw error
-        setRubrikData(data || [])
-      } catch (e) {
-        console.error("Error fetching rubrik:", e)
+        if (!active) return
+
+        const levels = (data as RubrikLevel[]) || []
+        setRubrikData(levels)
+        setSelectedLevelId((current) => {
+          if (levels.some((item) => item.level === current)) return current
+          return levels[0]?.level || 1
+        })
+      } catch (error) {
+        console.error("Error loading rubric:", error)
+        if (active) setRubrikData([])
+      } finally {
+        if (active) setLoadingRubrik(false)
       }
     }
-    fetchRubrik()
+
+    fetchRubric()
+
+    return () => {
+      active = false
+    }
   }, [selectedIndikatorId])
 
-  const selectedInd = indikators.find(i => i.id === selectedIndikatorId)
-  
-  const latestSpbe = spbeTrendData.length > 0 ? spbeTrendData[spbeTrendData.length - 1] : null;
-  const latestPemdi = pemdiTrendData.length > 0 ? pemdiTrendData[pemdiTrendData.length - 1] : null;
-  
-  const getCategoryColor = (kategori: string) => {
-    const k = kategori?.toLowerCase() || '';
-    if (k.includes('sangat baik') || k.includes('memuaskan')) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-    if (k.includes('baik')) return 'bg-teal-50 text-teal-700 border-teal-200';
-    if (k.includes('cukup')) return 'bg-blue-50 text-blue-700 border-blue-200';
-    if (k.includes('kurang') && !k.includes('sangat')) return 'bg-orange-50 text-orange-700 border-orange-200';
-    if (k.includes('sangat kurang') || k.includes('initiate')) return 'bg-red-50 text-red-700 border-red-200';
-    return 'bg-slate-50 text-slate-700 border-slate-200';
-  };
-  const filteredIndikators = indikators.filter(i => i.aspek_id === selectedAspekId)
-  const selectedRubrik = rubrikData.find(r => r.level === selectedLevelId)
+  const latestSpbe = spbeTrendData.at(-1) || null
+  const latestPemdi = pemdiTrendData.at(-1) || null
 
-  // Filtered documents
-  const filteredDocs = documents.filter(doc => {
-    const matchesTab = docTab === "Semua" || doc.kategori === docTab
-    const matchesSearch = (doc.judul || '').toLowerCase().includes(searchDoc.toLowerCase())
-    return matchesTab && matchesSearch
-  })
+  const currentScore = safeNumber(liveIndeks?.skor_1_5 ?? latestPemdi?.indeks)
+  const currentPredicate = liveIndeks?.predikat || latestPemdi?.kategori || "Belum dinilai"
+  const currentPercentage = Math.min(100, Math.max(0, (currentScore / 5) * 100))
+
+  const selectedAspek = useMemo(
+    () => aspeks.find((aspect) => aspect.id === selectedAspekId),
+    [aspeks, selectedAspekId]
+  )
+
+  const selectedIndikator = useMemo(
+    () => indikators.find((indicator) => indicator.id === selectedIndikatorId),
+    [indikators, selectedIndikatorId]
+  )
+
+  const aspectIndicators = useMemo(
+    () => indikators.filter((indicator) => indicator.aspek_id === selectedAspekId),
+    [indikators, selectedAspekId]
+  )
+
+  const filteredIndicators = useMemo(() => {
+    const keyword = searchIndikator.trim().toLowerCase()
+    if (!keyword) return aspectIndicators
+
+    return aspectIndicators.filter((indicator) => {
+      return (
+        indicator.kode?.toLowerCase().includes(keyword) ||
+        indicator.nama?.toLowerCase().includes(keyword) ||
+        indicator.deskripsi?.toLowerCase().includes(keyword)
+      )
+    })
+  }, [aspectIndicators, searchIndikator])
+
+  const selectedRubrik = useMemo(
+    () => rubrikData.find((rubric) => rubric.level === selectedLevelId),
+    [rubrikData, selectedLevelId]
+  )
+
+  const filteredDocuments = useMemo(() => {
+    const keyword = searchDoc.trim().toLowerCase()
+
+    return documents.filter((document) => {
+      const matchesCategory = docTab === "Semua" || document.kategori === docTab
+      const matchesKeyword = !keyword || document.judul?.toLowerCase().includes(keyword)
+      return matchesCategory && matchesKeyword
+    })
+  }, [docTab, documents, searchDoc])
+
+  const totalAspectWeight = aspeks.reduce((total, aspect) => total + safeNumber(aspect.bobot), 0)
+
+  const navItems = [
+    { label: "Ringkasan", href: "#ringkasan" },
+    { label: "Tren Kinerja", href: "#tren" },
+    { label: "Instrumen", href: "#instrumen" },
+    { label: "Dokumen", href: "#dokumen" },
+  ]
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans antialiased">
-      {/* Top Banner Header */}
-      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-6 py-4 shadow-sm">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-teal-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-teal-500/20">
-              <Sparkles className="h-5.5 w-5.5 animate-pulse-subtle" />
+    <main className="min-h-screen overflow-x-hidden bg-[#f5f7fb] text-slate-950 antialiased selection:bg-indigo-600 selection:text-white">
+      <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
+        <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+          <Link href="#ringkasan" className="group flex items-center gap-3" aria-label="PEMDI - Kembali ke halaman utama">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-lg shadow-slate-900/10 transition-transform group-hover:scale-105">
+              <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-teal-600 to-indigo-600 bg-clip-text text-transparent">
-                  SPBE
-                </span>
-                <span className="text-xs font-semibold text-slate-400">×</span>
-                <span className="font-extrabold text-lg tracking-tight text-slate-800">
-                  PEMDI
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-black tracking-[-0.04em] text-slate-950">PEMDI</span>
+                <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-[0.18em] text-indigo-600">
+                  Publik
                 </span>
               </div>
-              <p className="text-[10px] text-slate-500 font-medium">Sistem Pemantauan Evaluasi Pemerintah Digital</p>
+              <p className="hidden text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 sm:block">
+                Pemantauan Evaluasi Pemerintah Digital
+              </p>
             </div>
-          </div>
-          
-          <Link href="/login">
-            <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-md shadow-indigo-500/10 px-5 text-xs transition-all">
-              MASUK
-              <ArrowRight className="ml-1 h-3.5 w-3.5" />
-            </Button>
           </Link>
+
+          <nav className="hidden items-center gap-1 lg:flex" aria-label="Navigasi utama">
+            {navItems.map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950"
+              >
+                {item.label}
+              </a>
+            ))}
+          </nav>
+
+          <div className="flex items-center gap-2">
+            <Link href="/login" className="hidden sm:block">
+              <Button className="h-10 rounded-xl bg-indigo-600 px-5 text-xs font-bold text-white shadow-lg shadow-indigo-600/15 hover:bg-indigo-700">
+                Masuk Sistem
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </Link>
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen((value) => !value)}
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 lg:hidden"
+              aria-expanded={mobileMenuOpen}
+              aria-label={mobileMenuOpen ? "Tutup menu" : "Buka menu"}
+            >
+              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+          </div>
         </div>
+
+        {mobileMenuOpen && (
+          <div className="border-t border-slate-100 bg-white px-4 py-4 lg:hidden">
+            <nav className="mx-auto grid max-w-7xl gap-1" aria-label="Navigasi seluler">
+              {navItems.map((item) => (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="rounded-xl px-4 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  {item.label}
+                </a>
+              ))}
+              <Link href="/login" onClick={() => setMobileMenuOpen(false)} className="mt-2 sm:hidden">
+                <Button className="h-11 w-full rounded-xl bg-indigo-600 font-bold text-white hover:bg-indigo-700">
+                  Masuk Sistem
+                </Button>
+              </Link>
+            </nav>
+          </div>
+        )}
       </header>
 
-      {/* Hero / Charts Section */}
-      <section className="py-8 px-6 max-w-7xl mx-auto space-y-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {(() => {
-            return (
-              <>
-                {/* Chart 1: Indeks SPBE */}
-                <Card className="border-slate-200/80 shadow-sm overflow-hidden bg-white">
-                  <CardHeader className="pb-2 border-b border-slate-100">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-xl font-bold text-slate-800 flex items-center gap-1.5">
-                          Indeks SPBE
-                        </CardTitle>
-                        <CardDescription className="text-xs text-slate-500 mt-1">Perkembangan nilai indeks SPBE Nasional</CardDescription>
-                      </div>
-                      <div className="flex flex-col items-end">
-                        <span className="text-[9px] font-bold tracking-widest text-slate-400 uppercase mb-1">Kematangan</span>
-                        {latestSpbe?.kategori ? (
-                          <Badge className={cn("border px-3 py-1", getCategoryColor(latestSpbe.kategori))}>
-                            {latestSpbe.kategori}
-                          </Badge>
-                        ) : (
-                          <Badge className="bg-slate-50 text-slate-700 border border-slate-200 px-3 py-1">Belum Ada Data</Badge>
-                        )}
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-6">
-                    <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={spbeTrendData}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                          <XAxis dataKey="tahun" fontSize={11} stroke="#94a3b8" />
-                          <YAxis domain={[2.0, 5.0]} fontSize={11} stroke="#94a3b8" />
-                          <Tooltip
-                            formatter={(value: any, name: any, props: any) => [`${value} (${props.payload.kategori || 'Baik'})`, 'Nilai']}
-                            contentStyle={{ background: "#1e293b", border: "none", borderRadius: 8, color: "#fff", padding: "8px 12px" }}
-                            labelStyle={{ fontWeight: "bold", color: "#94a3b8", fontSize: 11, marginBottom: 4 }}
-                            itemStyle={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="indeks"
-                            stroke="#1e40af"
-                            strokeWidth={3}
-                            dot={{ r: 4, stroke: "#1e40af", strokeWidth: 2, fill: "#ffffff" }}
-                            activeDot={{ r: 6 }}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Chart 2: Indeks PEMDI */}
-                <Card className="border-slate-200/80 shadow-sm overflow-hidden bg-white">
-                  <CardHeader className="pb-2 border-b border-slate-100">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-xl font-bold text-slate-800 flex items-center gap-1.5">
-                          Indeks PEMDI
-                        </CardTitle>
-                        <CardDescription className="text-xs text-slate-500 mt-1">Progres agregat indeks internal daerah</CardDescription>
-                      </div>
-                      <div className="flex flex-col items-end">
-                        <span className="text-[9px] font-bold tracking-widest text-slate-400 uppercase mb-1">Kematangan</span>
-                        {latestPemdi?.kategori ? (
-                          <Badge className={cn("border px-3 py-1", getCategoryColor(latestPemdi.kategori))}>
-                            {latestPemdi.kategori}
-                          </Badge>
-                        ) : (
-                          <Badge className="bg-slate-50 text-slate-700 border border-slate-200 px-3 py-1">Belum Ada Data</Badge>
-                        )}
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-6">
-                    <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={pemdiTrendData}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                          <XAxis dataKey="tahun" fontSize={11} stroke="#94a3b8" />
-                          <YAxis domain={[2.0, 5.0]} fontSize={11} stroke="#94a3b8" />
-                          <Tooltip
-                            formatter={(value: any, name: any, props: any) => [`${value} (${props.payload.kategori || 'Baik'})`, 'Nilai']}
-                            contentStyle={{ background: "#1e293b", border: "none", borderRadius: 8, color: "#fff", padding: "8px 12px" }}
-                            labelStyle={{ fontWeight: "bold", color: "#94a3b8", fontSize: 11, marginBottom: 4 }}
-                            itemStyle={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}
-                            cursor={{ fill: '#f8fafc' }}
-                          />
-                          <Bar dataKey="indeks" fill="url(#indigoGrad)" radius={[4, 4, 0, 0]} barSize={30}>
-                            <defs>
-                              <linearGradient id="indigoGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#3b82f6" stopOpacity={1} />
-                                <stop offset="100%" stopColor="#1e40af" stopOpacity={0.8} />
-                              </linearGradient>
-                            </defs>
-                            {pemdiTrendData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={index === pemdiTrendData.length - 1 ? "url(#indigoGrad)" : "#93c5fd"} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </CardContent>
-                </Card>
-              </>
-            );
-          })()}
+      {dataWarning && (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-center text-xs font-medium text-amber-700">
+          {dataWarning}
         </div>
+      )}
 
-        {/* Indeks Tahun Berjalan Progress Row */}
-        {(() => {
-          const displayScore = liveIndeks ? liveIndeks.skor_1_5 : (latestPemdi ? latestPemdi.indeks : 0);
-          const displayPredikat = liveIndeks ? liveIndeks.predikat : (latestPemdi ? latestPemdi.kategori : "BELUM ADA DATA");
-          const percentage = (displayScore / 5.0) * 100;
+      <section id="ringkasan" className="relative scroll-mt-24 overflow-hidden bg-slate-950">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-30"
+          style={{
+            backgroundImage:
+              "linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px)",
+            backgroundSize: "48px 48px",
+          }}
+        />
+        <div className="pointer-events-none absolute -right-40 -top-40 h-[520px] w-[520px] rounded-full bg-indigo-500/20 blur-[120px]" />
+        <div className="pointer-events-none absolute -bottom-52 left-1/4 h-[460px] w-[460px] rounded-full bg-cyan-400/10 blur-[120px]" />
 
-          return (
-            <div className="bg-white border border-slate-200/60 shadow-sm rounded-[2rem] p-8 lg:p-10">
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-4 py-20 sm:px-6 sm:py-24 lg:grid-cols-[1.15fr_.85fr] lg:px-8 lg:py-28">
+          <div>
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-indigo-200 backdrop-blur">
+              <Sparkles className="h-3.5 w-3.5" />
+              Portal Transparansi Kinerja Digital
+            </div>
+
+            <h1 className="max-w-3xl text-4xl font-black leading-[1.08] tracking-[-0.045em] text-white sm:text-5xl lg:text-6xl">
+              Mengukur kematangan pemerintah digital secara
+              <span className="block bg-gradient-to-r from-indigo-300 via-white to-cyan-300 bg-clip-text text-transparent">
+                terarah dan transparan.
+              </span>
+            </h1>
+
+            <p className="mt-6 max-w-2xl text-base leading-8 text-slate-300 sm:text-lg">
+              Portal publik untuk memahami kinerja SPBE, memantau asesmen mandiri PEMDI, serta mempelajari aspek, indikator, rubrik kematangan, dan bukti dukung Pemerintah Kabupaten Bandung.
+            </p>
+
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <a href="#instrumen">
+                <Button className="h-12 w-full rounded-xl bg-white px-6 text-sm font-bold text-slate-950 shadow-xl shadow-black/10 hover:bg-slate-100 sm:w-auto">
+                  Jelajahi Instrumen
+                  <ChevronRight className="ml-2 h-4 w-4" />
+                </Button>
+              </a>
+              <Link href="/login">
+                <Button
+                  variant="outline"
+                  className="h-12 w-full rounded-xl border-white/15 bg-white/5 px-6 text-sm font-bold text-white backdrop-blur hover:bg-white/10 hover:text-white sm:w-auto"
+                >
+                  Mulai Asesmen
+                </Button>
+              </Link>
+            </div>
+
+            <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3 text-xs font-semibold text-slate-400">
+              <span className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-400" /> Data terintegrasi
+              </span>
+              <span className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-400" /> Instrumen transparan
+              </span>
+              <span className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-400" /> Berbasis bukti dukung
+              </span>
+            </div>
+          </div>
+
+          <div className="relative">
+            <div className="absolute -inset-6 rounded-[36px] bg-gradient-to-br from-indigo-500/20 to-cyan-400/10 blur-2xl" />
+            <div className="relative overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.07] p-6 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-8">
+              <div className="flex items-start justify-between gap-5">
                 <div>
-                  <h2 className="text-xl md:text-2xl font-extrabold text-slate-800 flex items-center gap-3">
-                    <span className="h-2 w-2 rounded-full bg-slate-400" />
-                    Indeks Pemdi Tahun Berjalan
-                  </h2>
-                  <p className="text-[13px] text-slate-500 italic mt-1.5 md:ml-5">Progres nilai evaluasi kinerja pemerintah digital secara mandiri vs target yang ditetapkan</p>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Indeks PEMDI Terkini</p>
+                  <div className="mt-3 flex items-end gap-3">
+                    <span className="text-6xl font-black tracking-[-0.06em] text-white sm:text-7xl">
+                      {loadingLanding ? "—" : formatScore(currentScore)}
+                    </span>
+                    <span className="mb-2 text-sm font-semibold text-slate-400">dari 5,00</span>
+                  </div>
                 </div>
-                <div className="bg-slate-50/80 border border-slate-100 rounded-full px-5 py-2.5 shadow-sm text-[11px] font-bold text-slate-600 tracking-widest uppercase">
-                  {displayPredikat}
-                </div>
-              </div>
-
-              <div className="flex justify-between items-end mt-10 mb-8 md:ml-5">
-                <div className="flex items-baseline gap-3">
-                  <span className="text-5xl md:text-[64px] font-black text-slate-900 tracking-tighter leading-none">
-                    {displayScore.toFixed(2)}
-                  </span>
-                  <span className="text-sm md:text-base font-bold text-slate-400">Nilai Mandiri Terkini</span>
-                </div>
-                <div className="text-right flex flex-col items-end gap-1.5">
-                  <span className="text-[10px] md:text-xs font-bold text-slate-400 tracking-widest uppercase">Skor Target 2026</span>
-                  <span className="text-2xl md:text-3xl font-extrabold text-indigo-700 leading-none">1.00</span>
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500/20 text-indigo-200 ring-1 ring-inset ring-indigo-400/20">
+                  <Gauge className="h-6 w-6" />
                 </div>
               </div>
 
-          <div className="relative mt-12 mb-2 md:ml-5 md:mr-5">
-            {/* Value scale markings */}
-            <div className="absolute top-[-24px] left-0 right-0 w-full flex text-[10px] font-extrabold text-slate-300">
-              <div className="w-[30%] flex justify-end pr-2">1.5</div>
-              <div className="w-[20%] flex justify-end pr-2">2.5</div>
-              <div className="w-[20%] flex justify-end pr-2">3.5</div>
-              <div className="w-[10%] flex justify-end pr-2">4.0</div>
-              <div className="w-[20%]"></div>
-            </div>
-
-            {/* Marker Icon at current value */}
-            <div className="absolute top-[-30px] -translate-x-1/2 flex flex-col items-center z-10" style={{ left: `${percentage}%` }}>
-              <div className="h-3.5 w-[3px] bg-slate-500 rounded-full mb-0.5" />
-              <div className="h-3.5 w-3.5 rounded-full border-[2.5px] border-slate-500 bg-white" />
-            </div>
-
-            {/* The progress bar track */}
-            <div className="h-3.5 w-full bg-slate-100 rounded-full relative overflow-hidden flex shadow-inner">
-               {/* Gradient Fill representing current value */}
-               <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-indigo-500 via-teal-400 to-emerald-400 rounded-l-full" style={{ width: `${percentage}%` }} />
-               
-               {/* Hatched pattern up to target (target 1.0 = 20%) */}
-               <div className="absolute top-0 h-full bg-slate-200/50" 
-                    style={{ 
-                      left: `${percentage}%`,
-                      width: `${Math.max(0, 20 - percentage)}%`, 
-                      backgroundImage: 'repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(148, 163, 184, 0.15) 3px, rgba(148, 163, 184, 0.15) 6px)' 
-                    }} 
-               />
-
-               {/* White Dividers representing segment bounds */}
-               <div className="absolute top-0 left-0 w-full h-full flex pointer-events-none">
-                 <div className="w-[30%] h-full border-r-[2.5px] border-white" />
-                 <div className="w-[20%] h-full border-r-[2.5px] border-white" />
-                 <div className="w-[20%] h-full border-r-[2.5px] border-white" />
-                 <div className="w-[10%] h-full border-r-[2.5px] border-white" />
-                 <div className="w-[20%] h-full" />
-               </div>
-            </div>
-
-            {/* Category Labels below track */}
-            <div className="flex w-full mt-6 text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-              <div className="w-[30%] pr-4 border-r border-slate-200/70 pt-1">
-                <p>Initiate</p>
-                <p className="text-[10px] text-slate-500 mt-0.5">Kurang</p>
+              <div className="mt-7">
+                <div className="mb-2 flex items-center justify-between gap-4">
+                  <span className="text-xs font-semibold text-slate-400">Pencapaian skala kematangan</span>
+                  <Badge className={cn("border text-[10px] font-bold", getCategoryClasses(currentPredicate))}>
+                    {currentPredicate}
+                  </Badge>
+                </div>
+                <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-cyan-300 transition-[width] duration-700"
+                    style={{ width: `${currentPercentage}%` }}
+                  />
+                </div>
+                <div className="mt-2 flex justify-between text-[10px] font-semibold text-slate-500">
+                  <span>1,00</span>
+                  <span>3,00</span>
+                  <span>5,00</span>
+                </div>
               </div>
-              <div className="w-[20%] px-4 border-r border-slate-200/70 pt-1">
-                <p>Emerging</p>
-                <p className="text-[10px] text-slate-500 mt-0.5">Cukup</p>
-              </div>
-              <div className="w-[20%] px-4 border-r border-slate-200/70 pt-1">
-                <p>Developing</p>
-                <p className="text-[10px] text-slate-500 mt-0.5">Baik</p>
-              </div>
-              <div className="w-[10%] px-4 border-r border-slate-200/70 pt-1">
-                <p>Embedded</p>
-                <p className="text-[10px] text-slate-500 mt-0.5 whitespace-nowrap">Sgt Baik</p>
-              </div>
-              <div className="w-[20%] px-4 text-right pt-1">
-                <p>Leading</p>
-                <p className="text-[10px] text-slate-500 mt-0.5">Memuaskan</p>
+
+              <div className="mt-8 grid grid-cols-3 gap-3 border-t border-white/10 pt-6">
+                <div>
+                  <p className="text-2xl font-black text-white">{aspeks.length || "—"}</p>
+                  <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Aspek</p>
+                </div>
+                <div className="border-x border-white/10 px-4">
+                  <p className="text-2xl font-black text-white">{indikators.length || "—"}</p>
+                  <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Indikator</p>
+                </div>
+                <div className="pl-2">
+                  <p className="text-2xl font-black text-white">5</p>
+                  <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Level</p>
+                </div>
               </div>
             </div>
           </div>
         </div>
-        );
-        })()}
+      </section>
 
-        {/* Section 2: Daftar Indikator PEMDI */}
-        <div className="space-y-6 pt-4">
-          
-          {/* Aspek Tabs Header */}
-          <div className="flex overflow-x-auto gap-3 pb-2 scrollbar-none snap-x">
-            {aspeks.map((aspek, idx) => (
-              <button
-                key={aspek.id}
-                onClick={() => setSelectedAspekId(aspek.id)}
-                className={cn(
-                  "snap-center flex-shrink-0 flex items-center gap-2.5 px-4 py-3 rounded-[1.25rem] text-[11px] font-bold tracking-widest uppercase transition-all shadow-sm border",
-                  selectedAspekId === aspek.id
-                    ? "bg-[#1B4B8A] text-white border-[#1B4B8A]"
-                    : "bg-white text-slate-500 border-slate-100 hover:bg-slate-50"
-                )}
-              >
-                <div className={cn(
-                  "flex items-center justify-center h-5 w-5 rounded bg-white/20 text-[10px]",
-                  selectedAspekId !== aspek.id && "bg-slate-100 text-slate-400"
-                )}>
-                  {idx + 1}
-                </div>
-                {aspek.nama}
-              </button>
-            ))}
+      <section className="relative z-10 mx-auto -mt-8 max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            {
+              label: "Indeks SPBE",
+              value: loadingLanding ? "—" : formatScore(latestSpbe?.indeks),
+              detail: latestSpbe?.kategori || "Belum tersedia",
+              icon: Award,
+              iconClass: "bg-indigo-50 text-indigo-600",
+            },
+            {
+              label: "Indeks PEMDI",
+              value: loadingLanding ? "—" : formatScore(currentScore),
+              detail: currentPredicate,
+              icon: TrendingUp,
+              iconClass: "bg-cyan-50 text-cyan-600",
+            },
+            {
+              label: "Instrumen Aktif",
+              value: loadingInstrument ? "—" : String(indikators.length),
+              detail: `${aspeks.length} aspek • ${formatScore(totalAspectWeight)}% bobot`,
+              icon: Layers3,
+              iconClass: "bg-violet-50 text-violet-600",
+            },
+            {
+              label: "Pusat Pengetahuan",
+              value: loadingLanding ? "—" : String(documents.length),
+              detail: "Kebijakan, panduan, dan materi",
+              icon: BookOpen,
+              iconClass: "bg-emerald-50 text-emerald-600",
+            },
+          ].map((item) => {
+            const Icon = item.icon
+
+            return (
+              <Card key={item.label} className="rounded-2xl border-slate-200/80 bg-white shadow-lg shadow-slate-900/[0.04]">
+                <CardContent className="flex items-start justify-between p-5">
+                  <div>
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">{item.label}</p>
+                    <p className="mt-3 text-3xl font-black tracking-[-0.04em] text-slate-950">{item.value}</p>
+                    <p className="mt-1 max-w-[190px] truncate text-xs font-medium text-slate-500">{item.detail}</p>
+                  </div>
+                  <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", item.iconClass)}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      </section>
+
+      <section id="tren" className="scroll-mt-24 py-20 sm:py-24">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mb-10 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-indigo-600">Kinerja Digital</p>
+              <h2 className="mt-3 text-3xl font-black tracking-[-0.04em] text-slate-950 sm:text-4xl">
+                Tren yang mudah dipahami,
+                <span className="block text-slate-400">bukan sekadar angka.</span>
+              </h2>
+            </div>
+            <p className="max-w-xl text-sm leading-7 text-slate-500">
+              Perbandingan historis membantu melihat konsistensi peningkatan SPBE nasional dan hasil evaluasi mandiri PEMDI dari tahun ke tahun.
+            </p>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {/* Sidebar list (Indikator List) */}
-            <div className="lg:col-span-4 xl:col-span-3">
-              <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
-                <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-4">Daftar Indikator</p>
-                <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 scrollbar-thin">
-                  {loading ? (
-                    <div className="space-y-2">
-                      {[...Array(3)].map((_, i) => (
-                        <div key={i} className="h-24 bg-slate-100 animate-pulse rounded-2xl" />
-                      ))}
+          <div className="grid gap-6 xl:grid-cols-2">
+            <Card className="overflow-hidden rounded-3xl border-slate-200/80 bg-white shadow-sm">
+              <CardHeader className="flex flex-row items-start justify-between gap-4 border-b border-slate-100 px-6 py-5">
+                <div>
+                  <CardTitle className="text-base font-bold text-slate-900">Tren Indeks SPBE</CardTitle>
+                  <CardDescription className="mt-1 text-xs">Perkembangan nilai evaluasi SPBE instansi</CardDescription>
+                </div>
+                {latestSpbe?.kategori && (
+                  <Badge className={cn("border text-[10px] font-bold", getCategoryClasses(latestSpbe.kategori))}>
+                    {latestSpbe.kategori}
+                  </Badge>
+                )}
+              </CardHeader>
+              <CardContent className="p-6">
+                {spbeTrendData.length === 0 ? (
+                  <EmptyChart title="Tren SPBE belum tersedia" />
+                ) : (
+                  <div className="h-[280px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={spbeTrendData} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
+                        <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
+                        <XAxis dataKey="tahun" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                        <YAxis
+                          domain={[0, 5]}
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#94a3b8", fontSize: 11 }}
+                        />
+                        <Tooltip
+                          formatter={(value: any, _name: any, item: any) => [
+                            `${formatScore(value)} • ${item.payload.kategori || "Tanpa predikat"}`,
+                            "Nilai SPBE",
+                          ]}
+                          contentStyle={{
+                            background: "#0f172a",
+                            border: "none",
+                            borderRadius: 14,
+                            boxShadow: "0 16px 40px rgba(15,23,42,.2)",
+                            color: "#fff",
+                            fontSize: 12,
+                          }}
+                          labelStyle={{ color: "#94a3b8", fontWeight: 700, marginBottom: 6 }}
+                          itemStyle={{ color: "#fff", fontWeight: 700 }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="indeks"
+                          stroke="#4f46e5"
+                          strokeWidth={3}
+                          dot={{ r: 4, fill: "#ffffff", stroke: "#4f46e5", strokeWidth: 3 }}
+                          activeDot={{ r: 6, fill: "#4f46e5", stroke: "#ffffff", strokeWidth: 3 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden rounded-3xl border-slate-200/80 bg-white shadow-sm">
+              <CardHeader className="flex flex-row items-start justify-between gap-4 border-b border-slate-100 px-6 py-5">
+                <div>
+                  <CardTitle className="text-base font-bold text-slate-900">Tren Indeks PEMDI</CardTitle>
+                  <CardDescription className="mt-1 text-xs">Perkembangan asesmen mandiri pemerintah daerah</CardDescription>
+                </div>
+                {latestPemdi?.kategori && (
+                  <Badge className={cn("border text-[10px] font-bold", getCategoryClasses(latestPemdi.kategori))}>
+                    {latestPemdi.kategori}
+                  </Badge>
+                )}
+              </CardHeader>
+              <CardContent className="p-6">
+                {pemdiTrendData.length === 0 ? (
+                  <EmptyChart title="Tren PEMDI belum tersedia" />
+                ) : (
+                  <div className="h-[280px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={pemdiTrendData} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
+                        <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
+                        <XAxis dataKey="tahun" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                        <YAxis
+                          domain={[0, 5]}
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#94a3b8", fontSize: 11 }}
+                        />
+                        <Tooltip
+                          formatter={(value: any, _name: any, item: any) => [
+                            `${formatScore(value)} • ${item.payload.kategori || "Tanpa predikat"}`,
+                            "Nilai PEMDI",
+                          ]}
+                          contentStyle={{
+                            background: "#0f172a",
+                            border: "none",
+                            borderRadius: 14,
+                            boxShadow: "0 16px 40px rgba(15,23,42,.2)",
+                            color: "#fff",
+                            fontSize: 12,
+                          }}
+                          labelStyle={{ color: "#94a3b8", fontWeight: 700, marginBottom: 6 }}
+                          itemStyle={{ color: "#fff", fontWeight: 700 }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="indeks"
+                          stroke="#06b6d4"
+                          strokeWidth={3}
+                          dot={{ r: 4, fill: "#ffffff", stroke: "#06b6d4", strokeWidth: 3 }}
+                          activeDot={{ r: 6, fill: "#06b6d4", stroke: "#ffffff", strokeWidth: 3 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="mt-6 overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm">
+            <div className="grid gap-8 p-6 sm:p-8 lg:grid-cols-[.65fr_1.35fr] lg:items-center">
+              <div>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+                    <Target className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">Posisi Saat Ini</p>
+                    <p className="text-sm font-bold text-slate-800">Tingkat kematangan PEMDI</p>
+                  </div>
+                </div>
+                <div className="mt-6 flex items-end gap-3">
+                  <span className="text-5xl font-black tracking-[-0.05em] text-slate-950">{formatScore(currentScore)}</span>
+                  <span className="mb-1.5 text-sm font-semibold text-slate-400">/ 5,00</span>
+                </div>
+                <Badge className={cn("mt-4 border text-[10px] font-bold", getCategoryClasses(currentPredicate))}>
+                  {currentPredicate}
+                </Badge>
+              </div>
+
+              <div>
+                <div className="relative pt-7">
+                  <div
+                    className="absolute top-0 -translate-x-1/2 transition-[left] duration-700"
+                    style={{ left: `${currentPercentage}%` }}
+                  >
+                    <div className="rounded-lg bg-slate-950 px-2 py-1 text-[9px] font-bold text-white shadow-lg">
+                      {formatScore(currentScore)}
                     </div>
-                  ) : filteredIndikators.length === 0 ? (
-                    <div className="text-xs text-slate-400 italic text-center py-6">Belum ada indikator</div>
-                  ) : (
-                    filteredIndikators.map(ind => (
-                      <button
-                        key={ind.id}
-                        onClick={() => setSelectedIndikatorId(ind.id)}
+                    <div className="mx-auto h-2 w-2 -translate-y-1 rotate-45 bg-slate-950" />
+                  </div>
+                  <div className="flex h-3 overflow-hidden rounded-full bg-slate-100">
+                    {MATURITY_LEVELS.map((level) => (
+                      <div
+                        key={level.level}
                         className={cn(
-                          "w-full text-left p-4 rounded-2xl border transition-all cursor-pointer flex gap-4",
-                          selectedIndikatorId === ind.id
-                            ? "bg-[#f8fbff] border-blue-400 shadow-sm"
-                            : "bg-white border-slate-100 hover:border-slate-300"
+                          "h-full flex-1 border-r border-white last:border-r-0",
+                          level.level === 1 && "bg-amber-300",
+                          level.level === 2 && "bg-blue-300",
+                          level.level === 3 && "bg-cyan-400",
+                          level.level === 4 && "bg-indigo-500",
+                          level.level === 5 && "bg-emerald-500"
                         )}
-                      >
-                        <div className={cn(
-                          "flex items-center justify-center h-7 px-2.5 rounded-lg text-[11px] font-bold shrink-0",
-                          selectedIndikatorId === ind.id ? "bg-[#1B4B8A] text-white" : "bg-slate-100 text-slate-500"
-                        )}>
-                          {ind.kode}
-                        </div>
-                        <div className="space-y-2">
-                          <span className={cn(
-                            "line-clamp-3 text-xs font-bold leading-relaxed",
-                            selectedIndikatorId === ind.id ? "text-[#1B4B8A]" : "text-slate-700"
-                          )}>
-                            {ind.nama}
-                          </span>
-                          <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">Bobot: {ind.bobot}%</p>
-                        </div>
-                      </button>
-                    ))
-                  )}
+                      />
+                    ))}
+                  </div>
+                  <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-5">
+                    {MATURITY_LEVELS.map((level) => (
+                      <div key={level.level}>
+                        <p className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-400">
+                          L{level.level} • {level.name}
+                        </p>
+                        <p className="mt-1 text-xs font-bold text-slate-700">{level.label}</p>
+                        <p className="mt-0.5 text-[10px] text-slate-400">{level.range}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="instrumen" className="scroll-mt-24 bg-white py-20 sm:py-24">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="overflow-hidden rounded-[32px] bg-slate-950">
+            <div className="relative px-6 py-8 sm:px-8 lg:px-10">
+              <div className="pointer-events-none absolute right-0 top-0 h-64 w-64 rounded-full bg-indigo-500/15 blur-[90px]" />
+              <div className="relative flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
+                <div>
+                  <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-indigo-300">Instrumen PEMDI</p>
+                  <h2 className="mt-3 max-w-3xl text-3xl font-black tracking-[-0.04em] text-white sm:text-4xl">
+                    Daftar Aspek & Indikator PEMDI
+                  </h2>
+                  <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-400">
+                    Pilih aspek dan indikator untuk mempelajari tujuan pengukuran, tingkat kematangan, kondisi yang harus dipenuhi, serta bukti dukung yang diperlukan.
+                  </p>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { value: aspeks.length, label: "Aspek" },
+                    { value: indikators.length, label: "Indikator" },
+                    { value: 5, label: "Level" },
+                  ].map((item) => (
+                    <div key={item.label} className="min-w-[78px] rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-center">
+                      <p className="text-xl font-black text-white">{loadingInstrument ? "—" : item.value}</p>
+                      <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">{item.label}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
 
-            {/* Detail view right */}
-            <div className="lg:col-span-8 xl:col-span-9">
-              {selectedInd ? (
-                <div className="bg-white rounded-[2rem] border border-slate-100 p-8 shadow-sm h-full">
-                  
-                  {/* Indikator Header */}
-                  <div className="mb-6">
-                    <span className="inline-block bg-blue-50 text-[#1B4B8A] px-3 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase mb-4">
-                      {selectedInd.aspek?.nama || "Aspek"}
-                    </span>
-                    <h2 className="text-2xl md:text-3xl font-extrabold text-slate-800 leading-snug mb-4">
-                      {selectedInd.nama}
-                    </h2>
-                    <div 
-                      className="text-sm text-slate-600 leading-relaxed max-w-4xl prose prose-sm prose-slate prose-p:my-1 prose-ul:my-1 prose-li:my-0.5 max-w-none"
-                      dangerouslySetInnerHTML={{ __html: selectedInd.deskripsi || "Belum ada deskripsi untuk indikator ini." }}
-                    />
-                  </div>
+            <div className="relative border-t border-white/10 bg-white/[0.04] px-4 py-4 sm:px-6 lg:px-8 group/nav">
+              {/* Left Arrow Button */}
+              <button
+                type="button"
+                onClick={() => scrollAspect("left")}
+                className="absolute left-2 top-1/2 -translate-y-1/2 z-30 flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-slate-900/90 text-white shadow-lg backdrop-blur transition-opacity duration-250 opacity-0 group-hover/nav:opacity-100 hover:bg-slate-800 hover:scale-105 active:scale-95 cursor-pointer hidden md:flex"
+                aria-label="Scroll left"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
 
-                  {/* Toggle Modes */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between border-t border-slate-100 pt-6 mb-6 gap-4">
-                    <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">
-                      {rubrikViewMode === "fokus" ? "Detail Tingkat Kematangan" : "Perbandingan Level Kematangan"}
-                    </p>
-                    <div className="flex bg-slate-50 rounded-full p-1 border border-slate-100">
-                      <button 
-                        onClick={() => setRubrikViewMode("fokus")}
-                        className={cn("px-4 py-2 rounded-full text-[10px] font-bold tracking-widest uppercase transition-all", rubrikViewMode === "fokus" ? "bg-white shadow text-[#1B4B8A]" : "text-slate-500 hover:text-slate-800")}
-                      >
-                        Tab Fokus
-                      </button>
-                      <button 
-                        onClick={() => setRubrikViewMode("matriks")}
-                        className={cn("px-4 py-2 rounded-full text-[10px] font-bold tracking-widest uppercase transition-all", rubrikViewMode === "matriks" ? "bg-white shadow text-[#1B4B8A]" : "text-slate-500 hover:text-slate-800")}
-                      >
-                        Tabel Matriks
-                      </button>
-                    </div>
-                  </div>
+              {/* Scroll Container */}
+              <div
+                ref={aspectScrollRef}
+                className="flex gap-3 overflow-x-auto pb-3 scroll-smooth [scrollbar-width:thin] [scrollbar-color:#334155_transparent] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-track]:bg-transparent"
+              >
+                {loadingInstrument
+                  ? Array.from({ length: 4 }).map((_, index) => (
+                      <div key={index} className="h-[76px] min-w-[230px] animate-pulse rounded-2xl bg-white/10" />
+                    ))
+                  : aspeks.map((aspect, index) => {
+                      const isActive = aspect.id === selectedAspekId
+                      const indicatorCount = indikators.filter((indicator) => indicator.aspek_id === aspect.id).length
 
-                  {/* Conditional Rendering based on Mode */}
-                  {rubrikData.length === 0 ? (
-                    <div className="p-8 text-center text-slate-400 italic bg-slate-50 rounded-2xl border border-dashed">
-                      Rubrik level untuk indikator ini belum diisi.
-                    </div>
-                  ) : rubrikViewMode === "fokus" ? (
-                    <div className="space-y-6">
-                      {/* Level Buttons */}
-                      <div className="flex flex-wrap gap-3">
-                        {[1, 2, 3, 4, 5].map(lvl => {
-                          const hasData = rubrikData.some(r => r.level === lvl)
-                          return (
-                            <button
-                              key={lvl}
-                              disabled={!hasData}
-                              onClick={() => setSelectedLevelId(lvl)}
+                      return (
+                        <button
+                          key={aspect.id}
+                          type="button"
+                          onClick={() => setSelectedAspekId(aspect.id)}
+                          aria-pressed={isActive}
+                          className={cn(
+                            "group min-w-[230px] rounded-2xl border p-4 text-left transition-all cursor-pointer",
+                            isActive
+                              ? "border-white bg-white text-slate-950 shadow-xl"
+                              : "border-white/10 bg-white/[0.04] text-white hover:border-white/20 hover:bg-white/[0.08]"
+                          )}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div
                               className={cn(
-                                "px-6 py-2.5 rounded-full text-xs font-bold transition-all border",
-                                selectedLevelId === lvl
-                                  ? "bg-slate-700 text-white border-slate-700 shadow-md"
-                                  : hasData ? "bg-white text-slate-600 border-slate-200 hover:border-slate-400" : "bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed"
+                                "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-black",
+                                isActive ? "bg-indigo-600 text-white" : "bg-white/10 text-slate-300"
                               )}
                             >
-                              LEVEL {lvl}
-                            </button>
-                          )
-                        })}
-                      </div>
-                      
-                      {/* Level Header */}
-                      {selectedRubrik && (
-                        <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 flex items-center gap-4">
-                          <div className="h-10 w-10 shrink-0 bg-slate-600 rounded-xl flex items-center justify-center text-white font-bold">
-                            L{selectedLevelId}
+                              {String(index + 1).padStart(2, "0")}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="line-clamp-2 text-xs font-extrabold leading-5">{aspect.nama}</p>
+                              <div className={cn("mt-2 flex items-center gap-2 text-[10px] font-semibold", isActive ? "text-slate-500" : "text-slate-400")}>
+                                <span>{indicatorCount} indikator</span>
+                                <span>•</span>
+                                <span>Bobot {safeNumber(aspect.bobot).toFixed(1)}%</span>
+                              </div>
+                            </div>
                           </div>
-                          <div>
-                            <h3 className="text-base font-bold text-[#1B4B8A]">
-                              {selectedRubrik.predikat.split(" ")[0]} ({selectedRubrik.predikat})
-                            </h3>
-                            <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase mt-0.5">Kriteria Tingkat Kematangan Indikator</p>
+                        </button>
+                      )
+                    })}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
+            <aside className="self-start rounded-3xl border border-slate-200 bg-slate-50/70 p-4 xl:sticky xl:top-24">
+              <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">Aspek Terpilih</p>
+                    <p className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-slate-900">
+                      {selectedAspek?.nama || "Pilih aspek"}
+                    </p>
+                  </div>
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                    <LayoutGrid className="h-5 w-5" />
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+                    <p className="text-lg font-black text-slate-900">{aspectIndicators.length}</p>
+                    <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Indikator</p>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+                    <p className="text-lg font-black text-slate-900">{safeNumber(selectedAspek?.bobot).toFixed(1)}%</p>
+                    <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Bobot Aspek</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="relative mt-4">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="search"
+                  value={searchIndikator}
+                  onChange={(event) => setSearchIndikator(event.target.value)}
+                  placeholder="Cari kode atau indikator..."
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-xs font-medium text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
+                  aria-label="Cari indikator"
+                />
+              </div>
+
+              <div className="mt-4 flex items-center justify-between px-1">
+                <p className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.14em] text-slate-400">
+                  <ListFilter className="h-3.5 w-3.5" /> Daftar Indikator
+                </p>
+                <span className="text-[10px] font-bold text-slate-400">{filteredIndicators.length} hasil</span>
+              </div>
+
+              <div className="mt-3 max-h-[610px] space-y-2 overflow-y-auto pr-1 [scrollbar-color:#cbd5e1_transparent] [scrollbar-width:thin]">
+                {loadingInstrument ? (
+                  Array.from({ length: 5 }).map((_, index) => (
+                    <div key={index} className="h-[88px] animate-pulse rounded-2xl bg-slate-200/60" />
+                  ))
+                ) : filteredIndicators.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-5 py-10 text-center">
+                    <Search className="mx-auto h-7 w-7 text-slate-300" />
+                    <p className="mt-3 text-xs font-semibold text-slate-500">Indikator tidak ditemukan</p>
+                  </div>
+                ) : (
+                  filteredIndicators.map((indicator) => {
+                    const isActive = indicator.id === selectedIndikatorId
+
+                    return (
+                      <button
+                        key={indicator.id}
+                        type="button"
+                        onClick={() => setSelectedIndikatorId(indicator.id)}
+                        aria-pressed={isActive}
+                        className={cn(
+                          "group relative w-full overflow-hidden rounded-2xl border p-4 text-left transition-all",
+                          isActive
+                            ? "border-indigo-200 bg-white shadow-md shadow-indigo-900/[0.05]"
+                            : "border-transparent bg-white/70 hover:border-slate-200 hover:bg-white"
+                        )}
+                      >
+                        {isActive && <span className="absolute inset-y-3 left-0 w-1 rounded-r-full bg-indigo-600" />}
+                        <div className="flex items-start gap-3">
+                          <span
+                            className={cn(
+                              "flex h-8 min-w-12 shrink-0 items-center justify-center rounded-xl px-2 text-[10px] font-black",
+                              isActive ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500"
+                            )}
+                          >
+                            {indicator.kode}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className={cn("line-clamp-2 text-xs font-bold leading-5", isActive ? "text-slate-950" : "text-slate-700")}>
+                              {indicator.nama}
+                            </p>
+                            <div className="mt-2 flex items-center justify-between gap-3">
+                              <span className="text-[9px] font-extrabold uppercase tracking-[0.12em] text-slate-400">
+                                Bobot {safeNumber(indicator.bobot).toFixed(1)}%
+                              </span>
+                              <ChevronRight
+                                className={cn(
+                                  "h-4 w-4 transition-transform",
+                                  isActive ? "translate-x-0 text-indigo-600" : "-translate-x-1 text-slate-300 group-hover:translate-x-0"
+                                )}
+                              />
+                            </div>
                           </div>
                         </div>
-                      )}
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+            </aside>
 
-                      {/* Info Cards (Mocked content parsed from deskripsi) */}
-                      {selectedRubrik && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                          <div className="border border-slate-100 rounded-2xl p-6 bg-white shadow-sm flex flex-col">
-                            <h4 className="text-[11px] font-bold text-slate-400 tracking-widest uppercase flex items-center gap-2 mb-4">
-                              <FileText className="h-4 w-4 text-blue-500" /> Kriteria
-                            </h4>
-                            <div 
-                              className="text-sm text-slate-700 leading-relaxed prose prose-sm prose-slate max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0.5"
-                              dangerouslySetInnerHTML={{ __html: selectedRubrik.deskripsi || '-' }}
-                            />
-                          </div>
-                          <div className="border border-slate-100 rounded-2xl p-6 bg-white shadow-sm flex flex-col">
-                            <h4 className="text-[11px] font-bold text-slate-400 tracking-widest uppercase flex items-center gap-2 mb-4">
-                              <Activity className="h-4 w-4 text-orange-500" /> Kondisi
-                            </h4>
-                            <div 
-                              className="text-sm text-slate-700 leading-relaxed prose prose-sm prose-slate max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0.5"
-                              dangerouslySetInnerHTML={{ __html: selectedRubrik.kondisi || '-' }}
-                            />
-                          </div>
-                          <div className="border border-slate-100 rounded-2xl p-6 bg-white shadow-sm flex flex-col">
-                            <h4 className="text-[11px] font-bold text-slate-400 tracking-widest uppercase flex items-center gap-2 mb-4">
-                              <BookOpen className="h-4 w-4 text-emerald-500" /> Bukti Dukung
-                            </h4>
-                            <div 
-                              className="text-sm text-slate-700 leading-relaxed prose prose-sm prose-slate max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0.5"
-                              dangerouslySetInnerHTML={{ __html: selectedRubrik.bukti_dukung || '-' }}
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    /* Matrix View */
-                    <div className="overflow-x-auto border border-slate-100 rounded-2xl shadow-sm">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50 border-b border-slate-100">
-                            <th className="p-4 text-[10px] font-bold text-slate-400 tracking-widest uppercase border-r border-slate-100 w-24 align-bottom">Elemen</th>
-                            {[1, 2, 3, 4, 5].map(lvl => {
-                              const r = rubrikData.find(x => x.level === lvl)
-                              return (
-                                <th key={lvl} className="p-4 border-r border-slate-100 align-top min-w-[200px] text-center">
-                                  <div className="flex flex-col items-center gap-2">
-                                    <div className="h-8 w-8 rounded-full border border-slate-300 flex items-center justify-center text-xs font-bold text-slate-500">
-                                      L{lvl}
-                                    </div>
-                                    <span className="text-[9px] font-bold text-slate-400 tracking-widest uppercase">{r ? r.predikat : "N/A"}</span>
-                                  </div>
-                                </th>
-                              )
-                            })}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr className="border-b border-slate-100">
-                            <td className="p-4 text-[10px] font-bold text-slate-400 tracking-widest uppercase border-r border-slate-100 bg-white">Kriteria</td>
-                            {[1, 2, 3, 4, 5].map(lvl => {
-                              const r = rubrikData.find(x => x.level === lvl)
-                              return (
-                                <td 
-                                  key={lvl} 
-                                  className="p-4 border-r border-slate-100 bg-white align-top text-xs text-slate-600 leading-relaxed prose prose-sm prose-slate prose-p:my-1 prose-ul:my-1 prose-li:my-0.5"
-                                  dangerouslySetInnerHTML={{ __html: r ? r.deskripsi : "-" }}
-                                />
-                              )
-                            })}
-                          </tr>
-                          <tr className="border-b border-slate-100">
-                            <td className="p-4 text-[10px] font-bold text-slate-400 tracking-widest uppercase border-r border-slate-100 bg-white">Kondisi</td>
-                            {[1, 2, 3, 4, 5].map(lvl => {
-                              const r = rubrikData.find(x => x.level === lvl)
-                              return (
-                                <td 
-                                  key={lvl} 
-                                  className="p-4 border-r border-slate-100 bg-white align-top text-xs text-slate-600 leading-relaxed prose prose-sm prose-slate prose-p:my-1 prose-ul:my-1 prose-li:my-0.5"
-                                  dangerouslySetInnerHTML={{ __html: r?.kondisi || "-" }}
-                                />
-                              )
-                            })}
-                          </tr>
-                          <tr>
-                            <td className="p-4 text-[10px] font-bold text-slate-400 tracking-widest uppercase border-r border-slate-100 bg-white">Bukti Dukung</td>
-                            {[1, 2, 3, 4, 5].map(lvl => {
-                              const r = rubrikData.find(x => x.level === lvl)
-                              return (
-                                <td 
-                                  key={lvl} 
-                                  className="p-4 border-r border-slate-100 bg-white align-top text-xs text-slate-600 leading-relaxed prose prose-sm prose-slate prose-p:my-1 prose-ul:my-1 prose-li:my-0.5"
-                                  dangerouslySetInnerHTML={{ __html: r?.bukti_dukung || "-" }}
-                                />
-                              )
-                            })}
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-
+            <div className="min-w-0">
+              {!selectedIndikator ? (
+                <div className="flex min-h-[620px] flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50/70 p-10 text-center">
+                  <Layers3 className="h-10 w-10 text-slate-300" />
+                  <h3 className="mt-4 text-base font-bold text-slate-700">Pilih indikator</h3>
+                  <p className="mt-2 max-w-md text-sm leading-6 text-slate-400">
+                    Detail instrumen dan rubrik kematangan akan ditampilkan pada area ini.
+                  </p>
                 </div>
               ) : (
-                <div className="flex h-full items-center justify-center border border-dashed border-slate-200 rounded-3xl p-12 bg-slate-50/50 text-slate-400 font-semibold">
-                  Pilih indikator untuk melihat rincian rubrik
-                </div>
+                <article className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+                  <div className="border-b border-slate-100 bg-gradient-to-br from-slate-50 to-white p-6 sm:p-8">
+                    <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-start">
+                      <div className="max-w-3xl">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge className="border-0 bg-indigo-600 px-3 py-1 text-[10px] font-extrabold text-white hover:bg-indigo-600">
+                            {selectedIndikator.kode}
+                          </Badge>
+                          <Badge variant="outline" className="border-slate-200 bg-white text-[10px] font-bold text-slate-500">
+                            {selectedAspek?.nama || selectedIndikator.aspek?.nama || "Aspek PEMDI"}
+                          </Badge>
+                        </div>
+                        <h3 className="mt-4 text-2xl font-black leading-tight tracking-[-0.03em] text-slate-950 sm:text-3xl">
+                          {selectedIndikator.nama}
+                        </h3>
+                        <div className="mt-4 max-w-3xl">
+                          <RichContent html={selectedIndikator.deskripsi} fallback="Deskripsi indikator belum tersedia." />
+                        </div>
+                      </div>
+
+                      <div className="grid min-w-[230px] grid-cols-2 gap-3">
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                          <p className="text-[9px] font-extrabold uppercase tracking-[0.14em] text-slate-400">Bobot</p>
+                          <p className="mt-2 text-2xl font-black text-slate-950">{safeNumber(selectedIndikator.bobot).toFixed(1)}%</p>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                          <p className="text-[9px] font-extrabold uppercase tracking-[0.14em] text-slate-400">Rubrik</p>
+                          <p className="mt-2 text-2xl font-black text-slate-950">{loadingRubrik ? "—" : rubrikData.length}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-5 sm:p-8">
+                    <div className="flex flex-col justify-between gap-4 border-b border-slate-100 pb-5 sm:flex-row sm:items-center">
+                      <div>
+                        <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">Rubrik Kematangan</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-700">
+                          {rubrikViewMode === "fokus" ? "Pelajari satu level secara mendalam" : "Bandingkan seluruh level dalam satu matriks"}
+                        </p>
+                      </div>
+                      <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+                        <button
+                          type="button"
+                          onClick={() => setRubrikViewMode("fokus")}
+                          className={cn(
+                            "rounded-lg px-4 py-2 text-[10px] font-extrabold uppercase tracking-[0.12em] transition-all",
+                            rubrikViewMode === "fokus" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-700"
+                          )}
+                        >
+                          Tampilan Fokus
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRubrikViewMode("matriks")}
+                          className={cn(
+                            "rounded-lg px-4 py-2 text-[10px] font-extrabold uppercase tracking-[0.12em] transition-all",
+                            rubrikViewMode === "matriks" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-700"
+                          )}
+                        >
+                          Matriks Level
+                        </button>
+                      </div>
+                    </div>
+
+                    {loadingRubrik ? (
+                      <div className="mt-6 space-y-4">
+                        <div className="h-16 animate-pulse rounded-2xl bg-slate-100" />
+                        <div className="grid gap-4 lg:grid-cols-2">
+                          <div className="h-52 animate-pulse rounded-2xl bg-slate-100" />
+                          <div className="h-52 animate-pulse rounded-2xl bg-slate-100" />
+                        </div>
+                      </div>
+                    ) : rubrikData.length === 0 ? (
+                      <div className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-12 text-center">
+                        <FileText className="mx-auto h-8 w-8 text-slate-300" />
+                        <p className="mt-3 text-sm font-semibold text-slate-500">Rubrik indikator belum tersedia</p>
+                      </div>
+                    ) : rubrikViewMode === "fokus" ? (
+                      <div className="mt-6">
+                        <div className="grid gap-2 sm:grid-cols-5">
+                          {MATURITY_LEVELS.map((level) => {
+                            const rubric = rubrikData.find((item) => item.level === level.level)
+                            const isActive = selectedLevelId === level.level
+
+                            return (
+                              <button
+                                key={level.level}
+                                type="button"
+                                disabled={!rubric}
+                                onClick={() => setSelectedLevelId(level.level)}
+                                className={cn(
+                                  "rounded-2xl border p-3 text-left transition-all",
+                                  isActive
+                                    ? "border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-600/15"
+                                    : rubric
+                                      ? "border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:bg-indigo-50/40"
+                                      : "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300"
+                                )}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className={cn("text-[9px] font-extrabold uppercase tracking-[0.14em]", isActive ? "text-indigo-100" : "text-slate-400")}>
+                                    Level {level.level}
+                                  </span>
+                                  <span
+                                    className={cn(
+                                      "flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-black",
+                                      isActive ? "bg-white/15 text-white" : "bg-slate-100 text-slate-500"
+                                    )}
+                                  >
+                                    L{level.level}
+                                  </span>
+                                </div>
+                                <p className="mt-2 text-xs font-black">{level.name}</p>
+                                <p className={cn("mt-1 text-[10px] font-semibold", isActive ? "text-indigo-100" : "text-slate-400")}>
+                                  {rubric?.predikat || level.label}
+                                </p>
+                              </button>
+                            )
+                          })}
+                        </div>
+
+                        {selectedRubrik && (
+                          <div className="mt-6 space-y-4">
+                            <div className="flex flex-col justify-between gap-4 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5 sm:flex-row sm:items-center">
+                              <div className="flex items-center gap-4">
+                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-sm font-black text-white shadow-lg shadow-indigo-600/20">
+                                  L{selectedRubrik.level}
+                                </div>
+                                <div>
+                                  <p className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-indigo-500">
+                                    Tingkat Kematangan {selectedRubrik.level}
+                                  </p>
+                                  <h4 className="mt-1 text-lg font-black text-indigo-950">{selectedRubrik.predikat}</h4>
+                                </div>
+                              </div>
+                              <div className="rounded-xl border border-indigo-100 bg-white px-4 py-2 text-xs font-semibold text-indigo-700">
+                                Instrumen Level {selectedRubrik.level} dari 5
+                              </div>
+                            </div>
+
+                            <div className="grid gap-4 lg:grid-cols-2">
+                              <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+                                <div className="mb-4 flex items-center gap-3">
+                                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                                    <FileText className="h-4 w-4" />
+                                  </div>
+                                  <div>
+                                    <p className="text-[9px] font-extrabold uppercase tracking-[0.14em] text-slate-400">Elemen Penilaian</p>
+                                    <h5 className="text-sm font-bold text-slate-900">Kriteria Utama</h5>
+                                  </div>
+                                </div>
+                                <RichContent html={selectedRubrik.deskripsi} fallback="Kriteria utama belum tersedia." />
+                              </div>
+
+                              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5 sm:p-6">
+                                <div className="mb-4 flex items-center gap-3">
+                                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-50 text-cyan-600">
+                                    <Activity className="h-4 w-4" />
+                                  </div>
+                                  <div>
+                                    <p className="text-[9px] font-extrabold uppercase tracking-[0.14em] text-slate-400">Kondisi Organisasi</p>
+                                    <h5 className="text-sm font-bold text-slate-900">Rincian Kondisi</h5>
+                                  </div>
+                                </div>
+                                <RichContent html={selectedRubrik.kondisi} fallback="Rincian kondisi belum tersedia." />
+                              </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-emerald-200/70 bg-emerald-50/50 p-5 sm:p-6">
+                              <div className="mb-4 flex items-center gap-3">
+                                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white">
+                                  <CheckCircle2 className="h-4 w-4" />
+                                </div>
+                                <div>
+                                  <p className="text-[9px] font-extrabold uppercase tracking-[0.14em] text-emerald-600">Dokumen Pembuktian</p>
+                                  <h5 className="text-sm font-bold text-emerald-950">Bukti Dukung yang Diperlukan</h5>
+                                </div>
+                              </div>
+                              <RichContent html={selectedRubrik.bukti_dukung} fallback="Daftar bukti dukung belum tersedia." />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200">
+                        <div className="overflow-x-auto">
+                          <table className="min-w-[1080px] border-collapse text-left">
+                            <thead>
+                              <tr className="border-b border-slate-200 bg-slate-950 text-white">
+                                <th className="sticky left-0 z-20 w-36 bg-slate-950 px-5 py-4 text-[10px] font-extrabold uppercase tracking-[0.14em]">
+                                  Elemen
+                                </th>
+                                {MATURITY_LEVELS.map((level) => {
+                                  const rubric = rubrikData.find((item) => item.level === level.level)
+                                  return (
+                                    <th key={level.level} className="min-w-[185px] border-l border-white/10 px-4 py-4 align-top">
+                                      <div className="flex items-center gap-3">
+                                        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/10 text-[10px] font-black">
+                                          L{level.level}
+                                        </span>
+                                        <div>
+                                          <p className="text-xs font-black">{level.name}</p>
+                                          <p className="mt-0.5 text-[9px] font-semibold text-slate-400">{rubric?.predikat || "Belum tersedia"}</p>
+                                        </div>
+                                      </div>
+                                    </th>
+                                  )
+                                })}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {[
+                                { label: "Kriteria", field: "deskripsi" as const },
+                                { label: "Kondisi", field: "kondisi" as const },
+                                { label: "Bukti Dukung", field: "bukti_dukung" as const },
+                              ].map((row, rowIndex) => (
+                                <tr key={row.label} className={cn("border-b border-slate-200 last:border-b-0", rowIndex % 2 === 1 && "bg-slate-50/60")}>
+                                  <th className={cn("sticky left-0 z-10 px-5 py-5 align-top text-[10px] font-extrabold uppercase tracking-[0.13em] text-slate-500", rowIndex % 2 === 1 ? "bg-slate-50" : "bg-white")}>
+                                    {row.label}
+                                  </th>
+                                  {MATURITY_LEVELS.map((level) => {
+                                    const rubric = rubrikData.find((item) => item.level === level.level)
+                                    const html = rubric?.[row.field] as string | undefined
+
+                                    return (
+                                      <td key={level.level} className="border-l border-slate-200 px-4 py-5 align-top">
+                                        <RichContent html={html} fallback="—" />
+                                      </td>
+                                    )
+                                  })}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </article>
               )}
             </div>
           </div>
         </div>
+      </section>
 
-        {/* Section 3: Manajemen Pengetahuan */}
-        <div className="space-y-6 pt-6">
-          <div className="text-center max-w-2xl mx-auto">
-            <h2 className="text-xl md:text-2xl font-extrabold text-slate-800 tracking-tight">Manajemen Pengetahuan</h2>
-            <p className="text-xs text-slate-500 mt-1">Unduh dokumen kebijakan, panduan, bahan paparan, dan laporan hasil evaluasi</p>
+      <section id="dokumen" className="scroll-mt-24 py-20 sm:py-24">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-indigo-600">Manajemen Pengetahuan</p>
+              <h2 className="mt-3 text-3xl font-black tracking-[-0.04em] text-slate-950 sm:text-4xl">Pusat dokumen dan referensi</h2>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-500">
+                Temukan kebijakan, pedoman, materi sosialisasi, panduan bukti dukung, dan laporan evaluasi yang mendukung pelaksanaan PEMDI.
+              </p>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20">
+              <BookOpen className="h-5 w-5" />
+            </div>
           </div>
 
-          <div className="space-y-4">
-            {/* Search & Tabs control */}
-            <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-3 rounded-xl border border-slate-200/80">
-              <div className="relative flex-1 w-full">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <div className="mt-8 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   type="search"
-                  placeholder="Cari kebijakan, modul, panduan..."
-                  className="h-9 w-full rounded-lg border border-slate-200 bg-transparent pl-9 pr-4 text-xs placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800"
                   value={searchDoc}
-                  onChange={(e) => setSearchDoc(e.target.value)}
+                  onChange={(event) => setSearchDoc(event.target.value)}
+                  placeholder="Cari judul dokumen, panduan, atau materi..."
+                  className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm font-medium text-slate-800 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+                  aria-label="Cari dokumen"
                 />
               </div>
-              <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
-                {["Semua", "Kebijakan", "Penerapan", "Evaluasi", "Materi"].map(tab => (
+              <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {DOCUMENT_TABS.map((tab) => (
                   <button
                     key={tab}
+                    type="button"
                     onClick={() => setDocTab(tab)}
                     className={cn(
-                      "px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all",
-                      docTab === tab
-                        ? "bg-indigo-600 text-white shadow-sm"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+                      "whitespace-nowrap rounded-xl px-4 py-2.5 text-xs font-bold transition-all",
+                      docTab === tab ? "bg-slate-950 text-white shadow-md" : "bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
                     )}
                   >
                     {tab}
@@ -728,65 +1334,124 @@ export default function LandingPage() {
                 ))}
               </div>
             </div>
+          </div>
 
-            {/* Document List */}
-            {filteredDocs.length === 0 ? (
-              <div className="text-center py-12 border border-dashed rounded-2xl bg-white text-slate-400 italic text-xs">
-                Tidak ada dokumen yang sesuai dengan pencarian Anda
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {filteredDocs.map(doc => (
-                  <Card key={doc.id} className="border-slate-200/80 hover:border-indigo-200 hover:shadow-md shadow-sm transition-all bg-white overflow-hidden group">
-                    <CardContent className="p-4 flex items-start gap-4">
-                      <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 flex-shrink-0">
-                        <FileText className="h-5 w-5" />
-                      </div>
-                      <div className="flex-1 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <Badge className="bg-slate-100 text-slate-600 border-none font-semibold text-[9px] py-0">
-                            {doc.kategori}
-                          </Badge>
-                          <span className="text-[10px] text-slate-400 font-medium">
-                            {doc.tipe} • {doc.ukuran}
-                          </span>
+          {loadingLanding ? (
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <div key={index} className="h-36 animate-pulse rounded-3xl bg-slate-200/70" />
+              ))}
+            </div>
+          ) : filteredDocuments.length === 0 ? (
+            <div className="mt-6 rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-16 text-center">
+              <FileText className="mx-auto h-9 w-9 text-slate-300" />
+              <p className="mt-4 text-sm font-bold text-slate-600">Dokumen tidak ditemukan</p>
+              <p className="mt-1 text-xs text-slate-400">Coba gunakan kata kunci atau kategori yang berbeda.</p>
+            </div>
+          ) : (
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {filteredDocuments.map((document) => {
+                const documentUrl = getDocumentUrl(document)
+
+                return (
+                  <Card
+                    key={document.id}
+                    className="group overflow-hidden rounded-3xl border-slate-200 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-indigo-200 hover:shadow-xl hover:shadow-slate-900/[0.06]"
+                  >
+                    <CardContent className="p-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 transition-colors group-hover:bg-indigo-600 group-hover:text-white">
+                          <FileText className="h-5 w-5" />
                         </div>
-                        <h4 className="text-xs font-bold text-slate-800 leading-snug group-hover:text-indigo-600 transition-colors">
-                          {doc.judul}
-                        </h4>
+                        <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[9px] font-bold text-slate-500">
+                          {document.kategori || "Dokumen"}
+                        </Badge>
                       </div>
-                      <button
-                        onClick={() => alert(`Mengunduh dokumen: ${doc.judul}`)}
-                        className="p-2 rounded-lg hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer"
-                        title="Unduh Dokumen"
-                      >
-                        <Download className="h-4.5 w-4.5" />
-                      </button>
+
+                      <h3 className="mt-5 line-clamp-2 min-h-10 text-sm font-black leading-5 text-slate-900 transition-colors group-hover:text-indigo-700">
+                        {document.judul}
+                      </h3>
+
+                      <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-4">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                          {[document.tipe, document.ukuran].filter(Boolean).join(" • ") || "Referensi PEMDI"}
+                        </p>
+                        {documentUrl ? (
+                          <a
+                            href={documentUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-50 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                            aria-label={`Buka ${document.judul}`}
+                          >
+                            <Download className="h-4 w-4" />
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled
+                            className="flex h-9 w-9 cursor-not-allowed items-center justify-center rounded-xl bg-slate-50 text-slate-300"
+                            aria-label="Tautan dokumen belum tersedia"
+                          >
+                            <Download className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
-                ))}
-              </div>
-            )}
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="px-4 pb-20 sm:px-6 sm:pb-24 lg:px-8">
+        <div className="relative mx-auto max-w-7xl overflow-hidden rounded-[32px] bg-indigo-600 px-6 py-10 sm:px-10 sm:py-12 lg:flex lg:items-center lg:justify-between">
+          <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
+          <div className="relative max-w-2xl">
+            <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-indigo-200">Area Asesmen</p>
+            <h2 className="mt-3 text-2xl font-black tracking-[-0.035em] text-white sm:text-3xl">
+              Siap melanjutkan pengisian dan evaluasi PEMDI?
+            </h2>
+            <p className="mt-3 text-sm leading-7 text-indigo-100">
+              Masuk ke dashboard untuk mengelola periode asesmen, melengkapi bukti dukung, dan memantau progres perangkat daerah.
+            </p>
+          </div>
+          <div className="relative mt-7 lg:mt-0">
+            <Link href="/login">
+              <Button className="h-12 rounded-xl bg-white px-6 text-sm font-bold text-indigo-700 shadow-xl hover:bg-indigo-50">
+                Masuk ke Dashboard
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </Link>
           </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="mt-12 bg-white border-t border-slate-200 py-6 px-6 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p>© {new Date().getFullYear()} PEMDI Dashboard. All rights reserved.</p>
-          <div className="flex items-center gap-4 font-semibold">
-            <a href="#" className="hover:text-indigo-600 transition-colors">Kebijakan Privasi</a>
-            <span>•</span>
-            <a href="#" className="hover:text-indigo-600 transition-colors">Panduan Sistem</a>
-            <span>•</span>
-            <a href="#" className="hover:text-indigo-600 transition-colors flex items-center gap-1">
-              Hubungi Kami
-              <ExternalLink className="h-3 w-3" />
+      <footer className="border-t border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-10 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-950 text-white">
+              <Building2 className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm font-black text-slate-900">PEMDI Kabupaten Bandung</p>
+              <p className="mt-0.5 text-xs text-slate-400">Portal Pemantauan Evaluasi Pemerintah Digital</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-xs font-semibold text-slate-500">
+            <a href="#instrumen" className="transition-colors hover:text-indigo-600">Instrumen</a>
+            <a href="#dokumen" className="transition-colors hover:text-indigo-600">Dokumen</a>
+            <a href="#" className="flex items-center gap-1.5 transition-colors hover:text-indigo-600">
+              Panduan Sistem <ExternalLink className="h-3 w-3" />
             </a>
           </div>
+
+          <p className="text-xs font-medium text-slate-400">© {new Date().getFullYear()} Pemerintah Kabupaten Bandung</p>
         </div>
       </footer>
-    </div>
+    </main>
   )
 }
