@@ -57,6 +57,7 @@ export interface Aspek {
   id: string
   kode: string
   nama: string
+  deskripsi?: string
   bobot: number
   urutan: number
   created_at: string
@@ -69,6 +70,7 @@ export interface Indikator {
   aspek_id: string
   kode: string
   nama: string
+  deskripsi?: string
   bobot: number
   urutan: number
   created_at: string
@@ -97,6 +99,8 @@ export interface RubrikLevel {
   batas_bawah: number
   batas_atas: number
   deskripsi: string
+  kondisi?: string
+  bukti_dukung?: string
   created_at: string
 }
 

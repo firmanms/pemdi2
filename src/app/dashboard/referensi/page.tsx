@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Fragment } from "react"
 import {
   Save,
   FolderCog,
@@ -10,7 +10,9 @@ import {
   Trash2,
   FileText,
   TrendingUp,
-  Globe
+  Globe,
+  Activity,
+  BookOpen
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -42,11 +44,13 @@ export default function ReferensiPage() {
   const [rubrikData, setRubrikData] = useState<RubrikLevel[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [rubrikViewMode, setRubrikViewMode] = useState<"fokus" | "matriks">("fokus")
+  const [selectedLevelId, setSelectedLevelId] = useState<number>(1)
 
   // --- Landing Page Content States ---
   const [landingContent, setLandingContent] = useState<{
-    spbe_trend: { id: string; tahun: number; indeks: number }[]
-    pemdi_trend: { id: string; tahun: number; indeks: number }[]
+    spbe_trend: { id: string; tahun: number; indeks: number; kategori: string }[]
+    pemdi_trend: { id: string; tahun: number; indeks: number; kategori: string }[]
     documents: { id: string; title: string; category: string; type: string; size: string; downloadUrl: string }[]
   }>({
     spbe_trend: [],
@@ -55,10 +59,100 @@ export default function ReferensiPage() {
   })
 
   // Inputs for adding new items
-  const [newSpbe, setNewSpbe] = useState({ tahun: "", indeks: "" })
-  const [newPemdi, setNewPemdi] = useState({ tahun: "", indeks: "" })
+  const [newSpbe, setNewSpbe] = useState({ tahun: "", indeks: "", kategori: "Baik" })
+  const [newPemdi, setNewPemdi] = useState({ tahun: "", indeks: "", kategori: "Baik" })
   const [newDoc, setNewDoc] = useState({ title: "", category: "Kebijakan", type: "PDF", size: "", downloadUrl: "" })
   const [savingLanding, setSavingLanding] = useState(false)
+
+  // --- Aspek & Indikator CRUD States ---
+  const [editingAspek, setEditingAspek] = useState<Partial<Aspek> | null>(null)
+  const [editingIndikator, setEditingIndikator] = useState<Partial<Indikator> | null>(null)
+  const [isAddingAspek, setIsAddingAspek] = useState(false)
+  const [isAddingIndikator, setIsAddingIndikator] = useState<string | null>(null) // holds aspek_id
+  
+  // Handlers for Aspek
+  const handleSaveAspek = async () => {
+    if (!editingAspek?.kode || !editingAspek?.nama || editingAspek.bobot === undefined) {
+      alert("Kode, Nama, dan Bobot wajib diisi!")
+      return
+    }
+    try {
+      const payload = {
+        kode: editingAspek.kode,
+        nama: editingAspek.nama,
+        deskripsi: editingAspek.deskripsi || '',
+        bobot: Number(editingAspek.bobot),
+        urutan: editingAspek.urutan || 0
+      }
+      if (editingAspek.id) {
+        // Update
+        const { error } = await supabase.from('aspek').update(payload).eq('id', editingAspek.id)
+        if (error) throw error
+      } else {
+        // Insert
+        const { error } = await supabase.from('aspek').insert([payload])
+        if (error) throw error
+      }
+      setEditingAspek(null)
+      setIsAddingAspek(false)
+      loadData()
+    } catch (e: any) {
+      alert("Gagal menyimpan aspek: " + e.message)
+    }
+  }
+
+  const handleDeleteAspek = async (id: string) => {
+    if (!confirm("Hapus aspek ini? Semua indikator di dalamnya (dan rubriknya) akan ikut terhapus!")) return
+    try {
+      const { error } = await supabase.from('aspek').delete().eq('id', id)
+      if (error) throw error
+      loadData()
+    } catch (e: any) {
+      alert("Gagal menghapus aspek: " + e.message)
+    }
+  }
+
+  // Handlers for Indikator
+  const handleSaveIndikator = async () => {
+    if (!editingIndikator?.kode || !editingIndikator?.nama || editingIndikator.bobot === undefined || !editingIndikator.aspek_id) {
+      alert("Kode, Nama, Bobot, dan Aspek wajib diisi!")
+      return
+    }
+    try {
+      const payload = {
+        aspek_id: editingIndikator.aspek_id,
+        kode: editingIndikator.kode,
+        nama: editingIndikator.nama,
+        deskripsi: editingIndikator.deskripsi || '',
+        bobot: Number(editingIndikator.bobot),
+        urutan: editingIndikator.urutan || 0
+      }
+      if (editingIndikator.id) {
+        const { error } = await supabase.from('indikator').update(payload).eq('id', editingIndikator.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('indikator').insert([payload])
+        if (error) throw error
+      }
+      setEditingIndikator(null)
+      setIsAddingIndikator(null)
+      loadData()
+    } catch (e: any) {
+      alert("Gagal menyimpan indikator: " + e.message)
+    }
+  }
+
+  const handleDeleteIndikator = async (id: string) => {
+    if (!confirm("Hapus indikator ini? Semua data rubrik dan penilaian terkait akan ikut terhapus!")) return
+    try {
+      const { error } = await supabase.from('indikator').delete().eq('id', id)
+      if (error) throw error
+      if (selectedIndikator === id) setSelectedIndikator("")
+      loadData()
+    } catch (e: any) {
+      alert("Gagal menghapus indikator: " + e.message)
+    }
+  }
 
   // 1. Fetch aspects and indicators
   const loadData = async () => {
@@ -112,13 +206,13 @@ export default function ReferensiPage() {
       return
     }
     try {
-      const { data, error } = await supabase.from('spbe_trend').insert({ tahun: thn, indeks: idx }).select().single()
+      const { data, error } = await supabase.from('spbe_trend').insert({ tahun: thn, indeks: idx, kategori: newSpbe.kategori || '' }).select().single()
       if (error) throw error
       setLandingContent(prev => ({
         ...prev,
         spbe_trend: [...prev.spbe_trend, data].sort((a, b) => a.tahun - b.tahun)
       }))
-      setNewSpbe({ tahun: "", indeks: "" })
+      setNewSpbe({ tahun: "", indeks: "", kategori: "Baik" })
     } catch (e: any) {
       alert("Gagal menambahkan SPBE: " + e.message)
     }
@@ -145,13 +239,13 @@ export default function ReferensiPage() {
       return
     }
     try {
-      const { data, error } = await supabase.from('pemdi_trend').insert({ tahun: thn, indeks: idx }).select().single()
+      const { data, error } = await supabase.from('pemdi_trend').insert({ tahun: thn, indeks: idx, kategori: newPemdi.kategori || '' }).select().single()
       if (error) throw error
       setLandingContent(prev => ({
         ...prev,
         pemdi_trend: [...prev.pemdi_trend, data].sort((a, b) => a.tahun - b.tahun)
       }))
-      setNewPemdi({ tahun: "", indeks: "" })
+      setNewPemdi({ tahun: "", indeks: "", kategori: "Baik" })
     } catch (e: any) {
       alert("Gagal menambahkan PEMDI: " + e.message)
     }
@@ -244,7 +338,7 @@ export default function ReferensiPage() {
 
   const updateRubrik = (
     idx: number,
-    field: "batas_bawah" | "batas_atas" | "predikat" | "deskripsi",
+    field: "batas_bawah" | "batas_atas" | "predikat" | "deskripsi" | "kondisi" | "bukti_dukung",
     value: string
   ) => {
     setRubrikData((prev) => {
@@ -330,113 +424,210 @@ export default function ReferensiPage() {
 
         {/* ---- Tab Aspek & Indikator ---- */}
         <TabsContent value="aspek">
-          <Card>
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-base">7 Aspek & 20 Indikator</CardTitle>
-                  <CardDescription>
-                    Atur bobot masing-masing aspek dan indikator
-                  </CardDescription>
+          <div className="grid grid-cols-1 gap-6">
+            
+            {/* Editor Form (Aspek or Indikator) */}
+            {(isAddingAspek || editingAspek || isAddingIndikator || editingIndikator) && (
+              <Card className="border-blue-200 bg-blue-50/30 shadow-sm animate-in fade-in zoom-in-95 duration-200">
+                <CardHeader className="pb-3 border-b border-blue-100">
+                  <CardTitle className="text-sm font-bold text-blue-800">
+                    {isAddingAspek ? "Tambah Aspek Baru" : editingAspek ? "Edit Aspek" : isAddingIndikator ? "Tambah Indikator Baru" : "Edit Indikator"}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Kode</label>
+                      <Input
+                        value={isAddingAspek || editingAspek ? editingAspek?.kode || "" : editingIndikator?.kode || ""}
+                        onChange={(e) => {
+                          if (isAddingAspek || editingAspek) setEditingAspek(prev => ({ ...prev, kode: e.target.value }))
+                          else setEditingIndikator(prev => ({ ...prev, kode: e.target.value }))
+                        }}
+                        placeholder="Contoh: A.1"
+                        className="bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Bobot (%)</label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={isAddingAspek || editingAspek ? editingAspek?.bobot || "" : editingIndikator?.bobot || ""}
+                        onChange={(e) => {
+                          if (isAddingAspek || editingAspek) setEditingAspek(prev => ({ ...prev, bobot: Number(e.target.value) }))
+                          else setEditingIndikator(prev => ({ ...prev, bobot: Number(e.target.value) }))
+                        }}
+                        placeholder="Contoh: 15"
+                        className="bg-white"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Nama</label>
+                      <Input
+                        value={isAddingAspek || editingAspek ? editingAspek?.nama || "" : editingIndikator?.nama || ""}
+                        onChange={(e) => {
+                          if (isAddingAspek || editingAspek) setEditingAspek(prev => ({ ...prev, nama: e.target.value }))
+                          else setEditingIndikator(prev => ({ ...prev, nama: e.target.value }))
+                        }}
+                        placeholder="Nama aspek atau indikator..."
+                        className="bg-white"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Deskripsi Singkat</label>
+                      <textarea
+                        value={isAddingAspek || editingAspek ? editingAspek?.deskripsi || "" : editingIndikator?.deskripsi || ""}
+                        onChange={(e) => {
+                          if (isAddingAspek || editingAspek) setEditingAspek(prev => ({ ...prev, deskripsi: e.target.value }))
+                          else setEditingIndikator(prev => ({ ...prev, deskripsi: e.target.value }))
+                        }}
+                        className="w-full rounded-md border border-input bg-white px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[80px] resize-none"
+                        placeholder="Deskripsi singkat (opsional)..."
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <Button variant="outline" size="sm" onClick={() => {
+                      setEditingAspek(null)
+                      setIsAddingAspek(false)
+                      setEditingIndikator(null)
+                      setIsAddingIndikator(null)
+                    }}>Batal</Button>
+                    <Button size="sm" onClick={isAddingAspek || editingAspek ? handleSaveAspek : handleSaveIndikator} className="bg-blue-600 hover:bg-blue-700">
+                      <Save className="h-4 w-4 mr-2" />
+                      Simpan
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* List Data */}
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-base">Daftar Aspek & Indikator</CardTitle>
+                    <CardDescription>
+                      Total {aspeks.length} Aspek & {indikators.length} Indikator
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {Math.abs(totalBobotAspek - 100) < 0.1 || Math.abs(totalBobotAspek - 1) < 0.1 ? (
+                      <Badge className="bg-emerald-500/15 text-emerald-600">
+                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                        Bobot Total: 100%
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-red-500/15 text-red-600">
+                        <AlertCircle className="h-3 w-3 mr-1" />
+                        Bobot Total: {totalBobotAspek}%
+                      </Badge>
+                    )}
+                    <Button size="sm" onClick={() => { setIsAddingAspek(true); setEditingAspek({}); setEditingIndikator(null); setIsAddingIndikator(null); }}>
+                      <Plus className="h-4 w-4 mr-1" />
+                      Tambah Aspek
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {Math.abs(totalBobotAspek - 100) < 0.1 || Math.abs(totalBobotAspek - 1) < 0.1 ? (
-                    <Badge className="bg-emerald-500/15 text-emerald-600">
-                      <CheckCircle2 className="h-3 w-3 mr-1" />
-                      Total bobot: 100%
-                    </Badge>
-                  ) : (
-                    <Badge className="bg-red-500/15 text-red-600">
-                      <AlertCircle className="h-3 w-3 mr-1" />
-                      Total bobot: {totalBobotAspek}% (harus 100%)
-                    </Badge>
-                  )}
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[60px]">Kode</TableHead>
-                    <TableHead>Nama</TableHead>
-                    <TableHead className="text-center w-[100px]">
-                      Bobot (%)
-                    </TableHead>
-                    <TableHead className="text-center w-[100px]">
-                      Indikator
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {aspeks.map((aspek) => {
-                    const inds = indikators.filter(
-                      (i) => i.aspek_id === aspek.id
-                    )
-                    return (
-                      <>
-                        <TableRow key={aspek.id} className="bg-muted/30 font-medium">
-                          <TableCell className="font-mono text-xs text-foreground">
-                            {aspek.kode}
-                          </TableCell>
-                          <TableCell className="font-semibold text-sm text-foreground">
-                            {aspek.nama}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <Badge variant="secondary">
-                              {aspek.bobot}%
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-center text-xs text-muted-foreground">
-                            {inds.length} indikator
-                          </TableCell>
-                        </TableRow>
-                        {inds.map((ind) => (
-                          <TableRow key={ind.id} className="text-sm">
-                            <TableCell className="font-mono text-xs text-muted-foreground pl-8">
-                              {ind.kode}
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[60px]">Kode</TableHead>
+                      <TableHead>Nama</TableHead>
+                      <TableHead className="text-center w-[100px]">Bobot</TableHead>
+                      <TableHead className="text-right w-[200px]">Aksi</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {aspeks.map((aspek) => {
+                      const inds = indikators.filter((i) => i.aspek_id === aspek.id)
+                      return (
+                        <Fragment key={aspek.id}>
+                          <TableRow className="bg-slate-50 border-t-2 border-t-slate-200">
+                            <TableCell className="font-mono text-xs font-bold text-slate-800">
+                              {aspek.kode}
                             </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {ind.nama}
+                            <TableCell className="font-bold text-sm text-slate-800">
+                              {aspek.nama}
                             </TableCell>
-                            <TableCell className="text-center text-xs">
-                              {ind.bobot}%
+                            <TableCell className="text-center">
+                              <Badge variant="secondary" className="bg-slate-200 text-slate-700 border-none font-bold">
+                                {aspek.bobot}%
+                              </Badge>
                             </TableCell>
-                            <TableCell />
+                            <TableCell className="text-right space-x-1">
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" title="Tambah Indikator" onClick={() => { setIsAddingIndikator(aspek.id); setEditingIndikator({ aspek_id: aspek.id }); setIsAddingAspek(false); setEditingAspek(null); }}>
+                                <Plus className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:text-blue-700 hover:bg-blue-50" title="Edit Aspek" onClick={() => { setEditingAspek(aspek); setIsAddingAspek(false); setEditingIndikator(null); setIsAddingIndikator(null); }}>
+                                <FolderCog className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50" title="Hapus Aspek" onClick={() => handleDeleteAspek(aspek.id)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </TableCell>
                           </TableRow>
-                        ))}
-                      </>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+                          {inds.map((ind) => (
+                            <TableRow key={ind.id} className="text-sm bg-white hover:bg-slate-50/50">
+                              <TableCell className="font-mono text-xs text-slate-500 pl-8">
+                                {ind.kode}
+                              </TableCell>
+                              <TableCell className="text-slate-600 leading-snug">
+                                {ind.nama}
+                              </TableCell>
+                              <TableCell className="text-center text-xs font-semibold text-slate-500">
+                                {ind.bobot}%
+                              </TableCell>
+                              <TableCell className="text-right space-x-1">
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-400 hover:text-blue-600 hover:bg-blue-50" title="Edit Indikator" onClick={() => { setEditingIndikator(ind); setIsAddingIndikator(null); setEditingAspek(null); setIsAddingAspek(false); }}>
+                                  <FolderCog className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-400 hover:text-red-600 hover:bg-red-50" title="Hapus Indikator" onClick={() => handleDeleteIndikator(ind.id)}>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </Fragment>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         {/* ---- Tab Rubrik Level ---- */}
         <TabsContent value="rubrik">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             {/* Indikator Selector */}
-            <Card className="lg:col-span-1">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm">Pilih Indikator</CardTitle>
+            <Card className="lg:col-span-1 border-slate-200">
+              <CardHeader className="pb-3 border-b border-slate-100">
+                <CardTitle className="text-sm font-bold tracking-tight text-slate-800">Daftar Indikator</CardTitle>
+                <CardDescription className="text-xs">Pilih indikator untuk mengatur rubrik level kematangan.</CardDescription>
               </CardHeader>
-              <CardContent className="p-2">
-                <div className="space-y-1 max-h-[500px] overflow-y-auto">
+              <CardContent className="p-0">
+                <div className="max-h-[600px] overflow-y-auto scrollbar-thin">
                   {indikators.map((ind) => (
                     <button
                       key={ind.id}
                       onClick={() => setSelectedIndikator(ind.id)}
                       className={cn(
-                        "w-full flex items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition-colors cursor-pointer",
+                        "w-full flex items-start gap-3 px-4 py-3 text-left transition-colors cursor-pointer border-b border-slate-50 last:border-0",
                         selectedIndikator === ind.id
-                          ? "bg-primary/10 text-primary font-medium"
-                          : "hover:bg-muted/50 text-muted-foreground"
+                          ? "bg-[#f8fbff] border-l-2 border-l-blue-500"
+                          : "hover:bg-slate-50 bg-white border-l-2 border-l-transparent"
                       )}
                     >
-                      <span className="font-mono shrink-0">{ind.kode}</span>
-                      <span className="truncate">{ind.nama}</span>
+                      <Badge className={cn("text-[9px] font-mono border-none py-0 shrink-0 mt-0.5", selectedIndikator === ind.id ? "bg-[#1B4B8A] text-white" : "bg-slate-100 text-slate-500")}>
+                        {ind.kode}
+                      </Badge>
+                      <span className={cn("text-xs leading-snug line-clamp-3", selectedIndikator === ind.id ? "text-[#1B4B8A] font-bold" : "text-slate-600 font-medium")}>{ind.nama}</span>
                     </button>
                   ))}
                 </div>
@@ -444,150 +635,251 @@ export default function ReferensiPage() {
             </Card>
 
             {/* Rubrik Editor */}
-            <Card className="lg:col-span-3 font-sans">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-base">
-                      Rubrik Level: {selectedInd?.kode} — {selectedInd?.nama}
-                    </CardTitle>
-                    <CardDescription>
-                      Atur rentang nilai untuk 5 level kematangan
-                    </CardDescription>
+            <div className="lg:col-span-3">
+              {selectedInd ? (
+                <div className="bg-white rounded-[2rem] border border-slate-100 p-8 shadow-sm h-full flex flex-col">
+                  
+                  {/* Header */}
+                  <div className="mb-6 flex items-start justify-between">
+                    <div>
+                      <span className="inline-block bg-blue-50 text-[#1B4B8A] px-3 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase mb-3">
+                        Edit Rubrik Kematangan
+                      </span>
+                      <h2 className="text-2xl font-extrabold text-slate-800 leading-snug mb-2">
+                        {selectedInd.nama}
+                      </h2>
+                    </div>
+                    <Button onClick={handleSaveRubrik} disabled={saving || rubrikErrors.length > 0} className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shrink-0">
+                      <Save className="h-4 w-4 mr-2" />
+                      {saving ? "Menyimpan..." : "Simpan Perubahan"}
+                    </Button>
                   </div>
-                  <Button size="sm" onClick={handleSaveRubrik} disabled={saving || rubrikErrors.length > 0}>
-                    <Save className="h-3.5 w-3.5 mr-1" />
-                    {saving ? "Menyimpan..." : "Simpan"}
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {/* Validation Messages */}
-                {rubrikErrors.length > 0 && (
-                  <div className="mb-4 rounded-lg bg-red-500/10 border border-red-500/20 p-3 space-y-1">
-                    {rubrikErrors.map((err, i) => (
-                      <p key={i} className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
-                        <AlertCircle className="h-3 w-3 shrink-0" />
-                        {err}
-                      </p>
-                    ))}
-                  </div>
-                )}
 
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[60px]">Level</TableHead>
-                      <TableHead className="w-[140px]">Predikat</TableHead>
-                      <TableHead className="w-[100px] text-center">
-                        Batas Bawah
-                      </TableHead>
-                      <TableHead className="w-[100px] text-center">
-                        Batas Atas
-                      </TableHead>
-                      <TableHead>Deskripsi</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rubrikData
-                      .sort((a, b) => a.level - b.level)
-                      .map((rubrik, idx) => (
-                        <TableRow key={rubrik.id}>
-                          <TableCell>
-                            <Badge variant="secondary" className="text-xs">
-                              {rubrik.level}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              value={rubrik.predikat}
-                              onChange={(e) =>
-                                updateRubrik(idx, "predikat", e.target.value)
-                              }
-                              className="h-8 text-xs text-foreground bg-transparent"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              value={rubrik.batas_bawah}
-                              onChange={(e) =>
-                                updateRubrik(idx, "batas_bawah", e.target.value)
-                              }
-                              className="h-8 text-xs text-center font-mono text-foreground bg-transparent"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              value={rubrik.batas_atas}
-                              onChange={(e) =>
-                                updateRubrik(idx, "batas_atas", e.target.value)
-                              }
-                              className="h-8 text-xs text-center font-mono text-foreground bg-transparent"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              value={rubrik.deskripsi}
-                              onChange={(e) =>
-                                updateRubrik(idx, "deskripsi", e.target.value)
-                              }
-                              className="h-8 text-xs text-foreground bg-transparent"
-                            />
-                          </TableCell>
-                        </TableRow>
+                  {/* Validation Errors */}
+                  {rubrikErrors.length > 0 && (
+                    <div className="mb-6 rounded-xl bg-red-50 border border-red-200 p-4 space-y-1.5">
+                      {rubrikErrors.map((err, i) => (
+                        <p key={i} className="text-xs text-red-600 font-medium flex items-center gap-1.5">
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                          {err}
+                        </p>
                       ))}
-                  </TableBody>
-                </Table>
-
-                {/* Visual Preview */}
-                {rubrikData.length === 5 && (
-                  <div className="mt-6">
-                    <p className="text-xs font-medium text-muted-foreground mb-2">
-                      Visualisasi Rentang
-                    </p>
-                    <div className="flex h-8 rounded-lg overflow-hidden">
-                      {rubrikData
-                        .sort((a, b) => a.level - b.level)
-                        .map((rubrik) => {
-                          const width =
-                            ((Number(rubrik.batas_atas) - Number(rubrik.batas_bawah)) / 4) * 100
-                          const colors = [
-                            "bg-red-400",
-                            "bg-orange-400",
-                            "bg-amber-400",
-                            "bg-blue-400",
-                            "bg-emerald-400",
-                          ]
-                          return (
-                            <div
-                              key={rubrik.id}
-                              className={cn(
-                                "flex items-center justify-center text-[10px] font-medium text-white transition-all",
-                                colors[rubrik.level - 1]
-                              )}
-                              style={{ width: `${width}%` }}
-                              title={`Level ${rubrik.level}: ${rubrik.batas_bawah} - ${rubrik.batas_atas}`}
-                            >
-                              L{rubrik.level}
-                            </div>
-                          )
-                        })}
                     </div>
-                    <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
-                      <span>1.00</span>
-                      <span>2.00</span>
-                      <span>3.00</span>
-                      <span>4.00</span>
-                      <span>5.00</span>
+                  )}
+
+                  {/* Toggle Modes */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between border-t border-slate-100 pt-6 mb-6 gap-4">
+                    <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">
+                      Mode Editor Rubrik
+                    </p>
+                    <div className="flex bg-slate-50 rounded-full p-1 border border-slate-100">
+                      <button 
+                        onClick={() => setRubrikViewMode("fokus")}
+                        className={cn("px-4 py-2 rounded-full text-[10px] font-bold tracking-widest uppercase transition-all", rubrikViewMode === "fokus" ? "bg-white shadow text-[#1B4B8A]" : "text-slate-500 hover:text-slate-800")}
+                      >
+                        Tab Fokus
+                      </button>
+                      <button 
+                        onClick={() => setRubrikViewMode("matriks")}
+                        className={cn("px-4 py-2 rounded-full text-[10px] font-bold tracking-widest uppercase transition-all", rubrikViewMode === "matriks" ? "bg-white shadow text-[#1B4B8A]" : "text-slate-500 hover:text-slate-800")}
+                      >
+                        Tabel Matriks
+                      </button>
                     </div>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+
+                  {rubrikData.length === 0 ? (
+                    <div className="flex-1 flex items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 p-12 text-slate-400 font-semibold italic text-sm">
+                      Memuat data rubrik...
+                    </div>
+                  ) : rubrikViewMode === "fokus" ? (
+                    <div className="space-y-6">
+                      {/* Level Buttons */}
+                      <div className="flex flex-wrap gap-3">
+                        {[1, 2, 3, 4, 5].map(lvl => (
+                          <button
+                            key={lvl}
+                            onClick={() => setSelectedLevelId(lvl)}
+                            className={cn(
+                              "px-6 py-2.5 rounded-full text-xs font-bold transition-all border shadow-sm",
+                              selectedLevelId === lvl
+                                ? "bg-slate-700 text-white border-slate-700"
+                                : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                            )}
+                          >
+                            LEVEL {lvl}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Selected Level Editor */}
+                      {rubrikData.map((rubrik, idx) => (
+                        rubrik.level === selectedLevelId && (
+                          <div key={rubrik.id} className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
+                            {/* Base Config (Predikat, Ranges) */}
+                            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6">
+                              <h4 className="text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-4">Pengaturan Dasar Level {rubrik.level}</h4>
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                  <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Predikat (e.g., Initiate)</label>
+                                  <Input value={rubrik.predikat} onChange={(e) => updateRubrik(idx, "predikat", e.target.value)} className="bg-white" />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Batas Bawah</label>
+                                  <Input type="number" step="0.01" value={rubrik.batas_bawah} onChange={(e) => updateRubrik(idx, "batas_bawah", e.target.value)} className="bg-white font-mono" />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Batas Atas</label>
+                                  <Input type="number" step="0.01" value={rubrik.batas_atas} onChange={(e) => updateRubrik(idx, "batas_atas", e.target.value)} className="bg-white font-mono" />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Detail Content */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                              <div className="border border-slate-100 rounded-2xl p-5 bg-white shadow-sm flex flex-col">
+                                <h4 className="text-[11px] font-bold text-slate-400 tracking-widest uppercase flex items-center gap-2 mb-3">
+                                  <FileText className="h-4 w-4 text-blue-500" /> Kriteria (Deskripsi)
+                                </h4>
+                                <textarea
+                                  value={rubrik.deskripsi}
+                                  onChange={(e) => updateRubrik(idx, "deskripsi", e.target.value)}
+                                  className="w-full flex-1 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[150px] resize-none"
+                                  placeholder="Masukkan kriteria utama untuk level ini..."
+                                />
+                              </div>
+                              <div className="border border-slate-100 rounded-2xl p-5 bg-white shadow-sm flex flex-col">
+                                <h4 className="text-[11px] font-bold text-slate-400 tracking-widest uppercase flex items-center gap-2 mb-3">
+                                  <Activity className="h-4 w-4 text-orange-500" /> Kondisi
+                                </h4>
+                                <textarea
+                                  value={rubrik.kondisi || ""}
+                                  onChange={(e) => updateRubrik(idx, "kondisi", e.target.value)}
+                                  className="w-full flex-1 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-orange-500 min-h-[150px] resize-none"
+                                  placeholder="Masukkan rincian kondisi (bisa gunakan angka/bullet)..."
+                                />
+                              </div>
+                              <div className="border border-slate-100 rounded-2xl p-5 bg-white shadow-sm flex flex-col">
+                                <h4 className="text-[11px] font-bold text-slate-400 tracking-widest uppercase flex items-center gap-2 mb-3">
+                                  <BookOpen className="h-4 w-4 text-emerald-500" /> Bukti Dukung
+                                </h4>
+                                <textarea
+                                  value={rubrik.bukti_dukung || ""}
+                                  onChange={(e) => updateRubrik(idx, "bukti_dukung", e.target.value)}
+                                  className="w-full flex-1 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 min-h-[150px] resize-none"
+                                  placeholder="Masukkan daftar bukti dukung yang disyaratkan..."
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      ))}
+                    </div>
+                  ) : (
+                    /* Matrix View */
+                    <div className="space-y-6">
+                      <div className="overflow-x-auto border border-slate-100 rounded-2xl shadow-sm pb-2">
+                        <table className="w-full text-left border-collapse min-w-[800px]">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-100">
+                              <th className="p-4 text-[10px] font-bold text-slate-400 tracking-widest uppercase border-r border-slate-100 w-24 align-bottom bg-white sticky left-0 z-10">Elemen</th>
+                              {[1, 2, 3, 4, 5].map(lvl => {
+                                const r = rubrikData.find(x => x.level === lvl)
+                                return (
+                                  <th key={lvl} className="p-4 border-r border-slate-100 align-top min-w-[200px] text-center">
+                                    <div className="flex flex-col items-center gap-2">
+                                      <div className="h-8 w-8 rounded-full border border-slate-300 flex items-center justify-center text-xs font-bold text-slate-500">
+                                        L{lvl}
+                                      </div>
+                                      <span className="text-[9px] font-bold text-slate-400 tracking-widest uppercase">{r ? r.predikat : "N/A"}</span>
+                                    </div>
+                                  </th>
+                                )
+                              })}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {/* Kriteria Row */}
+                            <tr>
+                              <td className="p-4 text-[10px] font-bold text-slate-400 tracking-widest uppercase border-r border-slate-100 bg-white sticky left-0 z-10">Kriteria</td>
+                              {[1, 2, 3, 4, 5].map(lvl => {
+                                const idx = rubrikData.findIndex(x => x.level === lvl)
+                                const r = rubrikData[idx]
+                                return (
+                                  <td key={`krit-${lvl}`} className="p-4 border-r border-slate-100 bg-white align-top text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">
+                                    {r?.deskripsi || "-"}
+                                  </td>
+                                )
+                              })}
+                            </tr>
+                            {/* Kondisi Row */}
+                            <tr>
+                              <td className="p-4 text-[10px] font-bold text-slate-400 tracking-widest uppercase border-r border-slate-100 border-t border-slate-100 bg-white sticky left-0 z-10">Kondisi</td>
+                              {[1, 2, 3, 4, 5].map(lvl => {
+                                const idx = rubrikData.findIndex(x => x.level === lvl)
+                                const r = rubrikData[idx]
+                                return (
+                                  <td key={`kond-${lvl}`} className="p-4 border-r border-slate-100 border-t border-slate-100 bg-white align-top text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">
+                                    {r?.kondisi || "-"}
+                                  </td>
+                                )
+                              })}
+                            </tr>
+                            {/* Bukti Dukung Row */}
+                            <tr>
+                              <td className="p-4 text-[10px] font-bold text-slate-400 tracking-widest uppercase border-r border-slate-100 border-t border-slate-100 bg-white sticky left-0 z-10">Bukti Dukung</td>
+                              {[1, 2, 3, 4, 5].map(lvl => {
+                                const idx = rubrikData.findIndex(x => x.level === lvl)
+                                const r = rubrikData[idx]
+                                return (
+                                  <td key={`bukt-${lvl}`} className="p-4 border-r border-slate-100 border-t border-slate-100 bg-white align-top text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">
+                                    {r?.bukti_dukung || "-"}
+                                  </td>
+                                )
+                              })}
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Visual Preview Range Tool */}
+                      <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6">
+                        <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-3">
+                          Visualisasi Rentang Nilai
+                        </p>
+                        <div className="flex h-10 rounded-xl overflow-hidden shadow-inner">
+                          {[...rubrikData].sort((a, b) => a.level - b.level).map((rubrik) => {
+                            const width = ((Number(rubrik.batas_atas) - Number(rubrik.batas_bawah)) / 4) * 100
+                            const colors = ["bg-red-400", "bg-orange-400", "bg-amber-400", "bg-blue-400", "bg-emerald-400"]
+                            return (
+                              <div
+                                key={rubrik.id}
+                                className={cn("flex items-center justify-center text-xs font-bold text-white transition-all shadow-[inset_0_1px_2px_rgba(255,255,255,0.3)]", colors[rubrik.level - 1])}
+                                style={{ width: `${width}%` }}
+                                title={`Level ${rubrik.level}: ${rubrik.batas_bawah} - ${rubrik.batas_atas}`}
+                              >
+                                L{rubrik.level}
+                              </div>
+                            )
+                          })}
+                        </div>
+                        <div className="flex justify-between mt-2 px-1 text-[10px] font-bold text-slate-400">
+                          <span>1.00</span>
+                          <span>2.00</span>
+                          <span>3.00</span>
+                          <span>4.00</span>
+                          <span>5.00</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex h-full items-center justify-center border border-dashed border-slate-200 rounded-3xl p-12 bg-slate-50/50 text-slate-400 font-semibold">
+                  Pilih indikator di panel kiri untuk mengatur rubrik level
+                </div>
+              )}
+            </div>
           </div>
         </TabsContent>
 
@@ -613,23 +905,30 @@ export default function ReferensiPage() {
                 </CardHeader>
                 <CardContent className="pt-4 space-y-4">
                   {/* Form input */}
-                  <div className="flex items-center gap-2 bg-muted/30 p-2.5 rounded-xl border border-dashed">
+                  <div className="flex flex-wrap items-center gap-2 bg-muted/30 p-2.5 rounded-xl border border-dashed">
                     <input
                       type="number"
                       placeholder="Tahun (e.g. 2026)"
-                      className="flex h-8 w-full rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      className="flex h-8 w-[100px] rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       value={newSpbe.tahun}
                       onChange={(e) => setNewSpbe({ ...newSpbe, tahun: e.target.value })}
                     />
                     <input
                       type="number"
                       step="0.01"
-                      placeholder="Skor Indeks (e.g. 3.4)"
-                      className="flex h-8 w-full rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      placeholder="Indeks (e.g. 3.4)"
+                      className="flex h-8 w-[100px] rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       value={newSpbe.indeks}
                       onChange={(e) => setNewSpbe({ ...newSpbe, indeks: e.target.value })}
                     />
-                    <Button onClick={handleAddSpbe} size="sm" className="h-8 text-xs shrink-0">
+                    <input
+                      type="text"
+                      placeholder="Kategori (e.g. Baik)"
+                      className="flex h-8 flex-1 min-w-[120px] rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      value={newSpbe.kategori}
+                      onChange={(e) => setNewSpbe({ ...newSpbe, kategori: e.target.value })}
+                    />
+                    <Button onClick={handleAddSpbe} size="sm" className="h-8 text-xs shrink-0 w-full sm:w-auto">
                       <Plus className="h-3.5 w-3.5 mr-1" /> Tambah
                     </Button>
                   </div>
@@ -641,19 +940,21 @@ export default function ReferensiPage() {
                         <TableRow>
                           <TableHead className="py-2 text-[10px] font-bold">Tahun</TableHead>
                           <TableHead className="py-2 text-[10px] font-bold text-center">Indeks</TableHead>
+                          <TableHead className="py-2 text-[10px] font-bold text-center">Kategori</TableHead>
                           <TableHead className="py-2 text-[10px] font-bold text-right w-[60px]">Aksi</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {landingContent.spbe_trend.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={3} className="text-center text-xs text-muted-foreground py-6 italic">Belum ada data</TableCell>
+                            <TableCell colSpan={4} className="text-center text-xs text-muted-foreground py-6 italic">Belum ada data</TableCell>
                           </TableRow>
                         ) : (
                           landingContent.spbe_trend.map(item => (
                             <TableRow key={item.id} className="text-xs">
                               <TableCell className="py-2 font-semibold text-slate-800">{item.tahun}</TableCell>
                               <TableCell className="py-2 font-mono text-center font-bold text-teal-600">{item.indeks}</TableCell>
+                              <TableCell className="py-2 text-center text-muted-foreground">{item.kategori || '-'}</TableCell>
                               <TableCell className="py-2 text-right">
                                 <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDeleteSpbe(item.id)}>
                                   <Trash2 className="h-3 w-3" />
@@ -679,23 +980,30 @@ export default function ReferensiPage() {
                 </CardHeader>
                 <CardContent className="pt-4 space-y-4">
                   {/* Form input */}
-                  <div className="flex items-center gap-2 bg-muted/30 p-2.5 rounded-xl border border-dashed">
+                  <div className="flex flex-wrap items-center gap-2 bg-muted/30 p-2.5 rounded-xl border border-dashed">
                     <input
                       type="number"
                       placeholder="Tahun (e.g. 2026)"
-                      className="flex h-8 w-full rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      className="flex h-8 w-[100px] rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       value={newPemdi.tahun}
                       onChange={(e) => setNewPemdi({ ...newPemdi, tahun: e.target.value })}
                     />
                     <input
                       type="number"
                       step="0.01"
-                      placeholder="Skor Indeks (e.g. 3.4)"
-                      className="flex h-8 w-full rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      placeholder="Indeks (e.g. 3.4)"
+                      className="flex h-8 w-[100px] rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       value={newPemdi.indeks}
                       onChange={(e) => setNewPemdi({ ...newPemdi, indeks: e.target.value })}
                     />
-                    <Button onClick={handleAddPemdi} size="sm" className="h-8 text-xs shrink-0">
+                    <input
+                      type="text"
+                      placeholder="Kategori (e.g. Baik)"
+                      className="flex h-8 flex-1 min-w-[120px] rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      value={newPemdi.kategori}
+                      onChange={(e) => setNewPemdi({ ...newPemdi, kategori: e.target.value })}
+                    />
+                    <Button onClick={handleAddPemdi} size="sm" className="h-8 text-xs shrink-0 w-full sm:w-auto">
                       <Plus className="h-3.5 w-3.5 mr-1" /> Tambah
                     </Button>
                   </div>
@@ -707,19 +1015,21 @@ export default function ReferensiPage() {
                         <TableRow>
                           <TableHead className="py-2 text-[10px] font-bold">Tahun</TableHead>
                           <TableHead className="py-2 text-[10px] font-bold text-center">Indeks</TableHead>
+                          <TableHead className="py-2 text-[10px] font-bold text-center">Kategori</TableHead>
                           <TableHead className="py-2 text-[10px] font-bold text-right w-[60px]">Aksi</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {landingContent.pemdi_trend.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={3} className="text-center text-xs text-muted-foreground py-6 italic">Belum ada data</TableCell>
+                            <TableCell colSpan={4} className="text-center text-xs text-muted-foreground py-6 italic">Belum ada data</TableCell>
                           </TableRow>
                         ) : (
                           landingContent.pemdi_trend.map(item => (
                             <TableRow key={item.id} className="text-xs">
                               <TableCell className="py-2 font-semibold text-slate-800">{item.tahun}</TableCell>
                               <TableCell className="py-2 font-mono text-center font-bold text-indigo-600">{item.indeks}</TableCell>
+                              <TableCell className="py-2 text-center text-muted-foreground">{item.kategori || '-'}</TableCell>
                               <TableCell className="py-2 text-right">
                                 <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDeletePemdi(item.id)}>
                                   <Trash2 className="h-3 w-3" />

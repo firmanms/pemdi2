@@ -12,6 +12,8 @@ import {
   ClipboardCheck,
   FileCheck2,
   X,
+  FolderCog,
+  Trash2
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -54,6 +56,22 @@ export default function PeriodePage() {
     isOpen: false,
     nama: '',
     tahun: ''
+  })
+
+  const [editModal, setEditModal] = useState<{
+    isOpen: boolean
+    id: string
+    nama: string
+    tahun: string
+    tanggal_mulai: string
+    tanggal_selesai: string
+  }>({
+    isOpen: false,
+    id: '',
+    nama: '',
+    tahun: '',
+    tanggal_mulai: '',
+    tanggal_selesai: ''
   })
 
   const [mounted, setMounted] = useState(false)
@@ -148,6 +166,48 @@ export default function PeriodePage() {
     } catch (e: any) {
       console.error(e)
       alert('Gagal membuat periode: ' + e.message)
+    }
+  }
+
+  const executeEditPeriode = async () => {
+    const { id, nama, tahun: tahunStr, tanggal_mulai, tanggal_selesai } = editModal
+    if (!nama.trim()) {
+      alert("Nama periode wajib diisi!")
+      return
+    }
+    const tahun = parseInt(tahunStr || '')
+    if (isNaN(tahun)) {
+      alert('Tahun tidak valid!')
+      return
+    }
+
+    try {
+      const { error } = await supabase.from('periode_asesmen').update({
+        tahun,
+        nama,
+        tanggal_mulai: tanggal_mulai || null,
+        tanggal_selesai: tanggal_selesai || null
+      }).eq('id', id)
+      if (error) throw error
+      alert('Periode berhasil diperbarui!')
+      setEditModal({ ...editModal, isOpen: false, id: '', nama: '', tahun: '', tanggal_mulai: '', tanggal_selesai: '' })
+      refreshData()
+    } catch (e: any) {
+      console.error(e)
+      alert('Gagal memperbarui periode: ' + e.message)
+    }
+  }
+
+  const executeDeletePeriode = async (id: string) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus periode ini? Semua data penilaian dan konsolidasi yang terkait akan ikut terhapus!')) return
+    try {
+      const { error } = await supabase.from('periode_asesmen').delete().eq('id', id)
+      if (error) throw error
+      alert('Periode berhasil dihapus!')
+      refreshData()
+    } catch (e: any) {
+      console.error(e)
+      alert('Gagal menghapus periode: ' + e.message)
     }
   }
 
@@ -299,7 +359,26 @@ export default function PeriodePage() {
                     </div>
 
                     {/* Actions */}
-                    <div className="flex gap-2 lg:ml-4">
+                    <div className="flex flex-wrap gap-2 lg:ml-4">
+                      {isDraft && (
+                        <Button size="sm" variant="outline" className="text-xs text-blue-600 hover:text-blue-700" onClick={() => setEditModal({
+                          isOpen: true,
+                          id: periode.id,
+                          nama: periode.nama,
+                          tahun: periode.tahun.toString(),
+                          tanggal_mulai: periode.tanggal_mulai || '',
+                          tanggal_selesai: periode.tanggal_selesai || ''
+                        })}>
+                          <FolderCog className="h-3.5 w-3.5 mr-1" />
+                          Edit
+                        </Button>
+                      )}
+                      {isDraft && (
+                        <Button size="sm" variant="outline" className="text-xs text-red-600 hover:text-red-700" onClick={() => executeDeletePeriode(periode.id)}>
+                          <Trash2 className="h-3.5 w-3.5 mr-1" />
+                          Hapus
+                        </Button>
+                      )}
                       {isDraft && (
                         <Button size="sm" variant="outline" className="text-xs" onClick={() => handleUpdateStatus(periode.id, 'ditutup')}>
                           Tutup Periode
@@ -371,6 +450,84 @@ export default function PeriodePage() {
                 </Button>
                 <Button variant="default" size="sm" onClick={executeCreatePeriode} className="text-xs">
                   Simpan Periode
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      , document.body)}
+
+      {/* ============================================================ */}
+      {/* MODAL: EDIT PERIODE */}
+      {/* ============================================================ */}
+      {mounted && editModal.isOpen && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+          <Card className="w-full max-w-sm shadow-2xl border-white/20 glass animate-scale-up text-left">
+            <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-white/10">
+              <CardTitle className="text-base text-foreground font-bold flex items-center gap-2">
+                <FolderCog className="h-4.5 w-4.5 text-blue-600" />
+                Edit Periode Asesmen
+              </CardTitle>
+              <button
+                onClick={() => setEditModal({ ...editModal, isOpen: false })}
+                className="rounded-lg p-1 text-muted-foreground hover:bg-muted/80 transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground/80">Nama Periode</label>
+                <input
+                  type="text"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  placeholder="Contoh: Evaluasi Semester 2 2026"
+                  value={editModal.nama}
+                  onChange={(e) => setEditModal({ ...editModal, nama: e.target.value })}
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground/80">Tahun</label>
+                <input
+                  type="number"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  placeholder="Contoh: 2026"
+                  value={editModal.tahun}
+                  onChange={(e) => setEditModal({ ...editModal, tahun: e.target.value })}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground/80">Tanggal Mulai</label>
+                  <input
+                    type="date"
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={editModal.tanggal_mulai}
+                    onChange={(e) => setEditModal({ ...editModal, tanggal_mulai: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground/80">Tanggal Selesai</label>
+                  <input
+                    type="date"
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={editModal.tanggal_selesai}
+                    onChange={(e) => setEditModal({ ...editModal, tanggal_selesai: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end pt-3 border-t border-white/10">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditModal({ ...editModal, isOpen: false })}
+                  className="text-xs"
+                >
+                  Batal
+                </Button>
+                <Button variant="default" size="sm" onClick={executeEditPeriode} className="text-xs bg-blue-600 hover:bg-blue-700 text-white">
+                  Simpan Perubahan
                 </Button>
               </div>
             </CardContent>

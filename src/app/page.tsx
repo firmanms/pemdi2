@@ -44,6 +44,13 @@ export default function LandingPage() {
   const [indikators, setIndikators] = useState<Indikator[]>([])
   const [selectedIndikatorId, setSelectedIndikatorId] = useState<string>("")
   const [rubrikData, setRubrikData] = useState<RubrikLevel[]>([])
+  
+  // New States for Indikator Section
+  const [aspeks, setAspeks] = useState<Aspek[]>([])
+  const [selectedAspekId, setSelectedAspekId] = useState<string>("")
+  const [rubrikViewMode, setRubrikViewMode] = useState<"fokus" | "matriks">("fokus")
+  const [selectedLevelId, setSelectedLevelId] = useState<number>(1)
+  
   const [docTab, setDocTab] = useState<string>("Semua")
   const [searchDoc, setSearchDoc] = useState<string>("")
   const [loading, setLoading] = useState(true)
@@ -70,29 +77,48 @@ export default function LandingPage() {
     fetchLandingContent()
   }, [])
 
-  // Load Indicators from Supabase
+  // Load Aspects and Indicators from Supabase
   useEffect(() => {
     async function fetchIndikators() {
       try {
         setLoading(true)
-        const { data, error } = await supabase
+        
+        // Fetch Aspek
+        const { data: aspData, error: aspErr } = await supabase.from("aspek").select("*").order("urutan")
+        if (aspErr) throw aspErr
+        setAspeks(aspData || [])
+        
+        if (aspData && aspData.length > 0) {
+          setSelectedAspekId(aspData[0].id)
+        }
+
+        // Fetch Indikator
+        const { data: indData, error: indErr } = await supabase
           .from("indikator")
           .select("*, aspek(*)")
           .order("urutan")
         
-        if (error) throw error
-        setIndikators(data || [])
-        if (data && data.length > 0) {
-          setSelectedIndikatorId(data[0].id)
-        }
+        if (indErr) throw indErr
+        setIndikators(indData || [])
       } catch (e) {
-        console.error("Error fetching indicators:", e)
+        console.error("Error fetching indicators/aspeks:", e)
       } finally {
         setLoading(false)
       }
     }
     fetchIndikators()
   }, [])
+
+  // Auto-select first indicator when aspect changes
+  useEffect(() => {
+    if (!selectedAspekId || indikators.length === 0) return
+    const filteredInds = indikators.filter(i => i.aspek_id === selectedAspekId)
+    if (filteredInds.length > 0) {
+      setSelectedIndikatorId(filteredInds[0].id)
+    } else {
+      setSelectedIndikatorId("")
+    }
+  }, [selectedAspekId, indikators])
 
   // Load Rubrik for selected indicator
   useEffect(() => {
@@ -114,12 +140,15 @@ export default function LandingPage() {
     fetchRubrik()
   }, [selectedIndikatorId])
 
+  // Get current data for render
   const selectedInd = indikators.find(i => i.id === selectedIndikatorId)
+  const filteredIndikators = indikators.filter(i => i.aspek_id === selectedAspekId)
+  const selectedRubrik = rubrikData.find(r => r.level === selectedLevelId)
 
   // Filtered documents
   const filteredDocs = documents.filter(doc => {
-    const matchesTab = docTab === "Semua" || doc.category === docTab
-    const matchesSearch = doc.title.toLowerCase().includes(searchDoc.toLowerCase())
+    const matchesTab = docTab === "Semua" || doc.kategori === docTab
+    const matchesSearch = (doc.judul || '').toLowerCase().includes(searchDoc.toLowerCase())
     return matchesTab && matchesSearch
   })
 
@@ -158,88 +187,126 @@ export default function LandingPage() {
       {/* Hero / Charts Section */}
       <section className="py-8 px-6 max-w-7xl mx-auto space-y-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Chart 1: Indeks SPBE */}
-          <Card className="border-slate-200/80 shadow-sm overflow-hidden bg-white">
-            <CardHeader className="pb-2 border-b border-slate-100">
-              <div className="flex justify-between items-center">
-                <div>
-                  <CardTitle className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                    <TrendingUp className="h-4 w-4 text-teal-600" />
-                    Indeks SPBE Nasional
-                  </CardTitle>
-                  <CardDescription className="text-xs">Periode pemantauan perkembangan 2018 - 2023</CardDescription>
-                </div>
-                <Badge className="bg-teal-50 text-teal-700 border-none text-[10px]">Nasional</Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={spbeTrendData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="tahun" fontSize={11} stroke="#94a3b8" />
-                    <YAxis domain={[0, 4]} fontSize={11} stroke="#94a3b8" />
-                    <Tooltip
-                      contentStyle={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8 }}
-                      labelStyle={{ fontWeight: "bold", color: "#1e293b", fontSize: 12 }}
-                      itemStyle={{ color: "#0d9488", fontSize: 12 }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="indeks"
-                      stroke="#0d9488"
-                      strokeWidth={3}
-                      dot={{ r: 4, stroke: "#0d9488", strokeWidth: 2, fill: "#ffffff" }}
-                      activeDot={{ r: 6 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
+          {(() => {
+            const latestSpbe = spbeTrendData.length > 0 ? spbeTrendData[spbeTrendData.length - 1] : null;
+            const latestPemdi = pemdiTrendData.length > 0 ? pemdiTrendData[pemdiTrendData.length - 1] : null;
+            
+            const getCategoryColor = (kategori: string) => {
+              const k = kategori?.toLowerCase() || '';
+              if (k.includes('sangat baik')) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+              if (k.includes('baik')) return 'bg-teal-50 text-teal-700 border-teal-200';
+              if (k.includes('cukup')) return 'bg-blue-50 text-blue-700 border-blue-200';
+              if (k.includes('kurang')) return 'bg-orange-50 text-orange-700 border-orange-200';
+              if (k.includes('sangat kurang')) return 'bg-red-50 text-red-700 border-red-200';
+              return 'bg-slate-50 text-slate-700 border-slate-200';
+            };
 
-          {/* Chart 2: Indeks PEMDI */}
-          <Card className="border-slate-200/80 shadow-sm overflow-hidden bg-white">
-            <CardHeader className="pb-2 border-b border-slate-100">
-              <div className="flex justify-between items-center">
-                <div>
-                  <CardTitle className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                    <Award className="h-4 w-4 text-indigo-600" />
-                    Indeks Kematangan PEMDI
-                  </CardTitle>
-                  <CardDescription className="text-xs">Progres agregat indeks internal daerah</CardDescription>
-                </div>
-                <Badge className="bg-indigo-50 text-indigo-700 border-none text-[10px]">Daerah</Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={pemdiTrendData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="tahun" fontSize={11} stroke="#94a3b8" />
-                    <YAxis domain={[0, 5]} fontSize={11} stroke="#94a3b8" />
-                    <Tooltip
-                      contentStyle={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8 }}
-                      labelStyle={{ fontWeight: "bold", color: "#1e293b", fontSize: 12 }}
-                      itemStyle={{ color: "#6366f1", fontSize: 12 }}
-                    />
-                    <Bar dataKey="indeks" fill="url(#indigoGrad)" radius={[4, 4, 0, 0]}>
-                      <defs>
-                        <linearGradient id="indigoGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#6366f1" stopOpacity={0.9} />
-                          <stop offset="100%" stopColor="#4f46e5" stopOpacity={0.4} />
-                        </linearGradient>
-                      </defs>
-                      {pemdiTrendData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={index === pemdiTrendData.length - 1 ? "#4f46e5" : "#6366f1"} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
+            return (
+              <>
+                {/* Chart 1: Indeks SPBE */}
+                <Card className="border-slate-200/80 shadow-sm overflow-hidden bg-white">
+                  <CardHeader className="pb-2 border-b border-slate-100">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <CardTitle className="text-xl font-bold text-slate-800 flex items-center gap-1.5">
+                          Indeks SPBE
+                        </CardTitle>
+                        <CardDescription className="text-xs text-slate-500 mt-1">Perkembangan nilai indeks SPBE Nasional</CardDescription>
+                      </div>
+                      <div className="flex flex-col items-end">
+                        <span className="text-[9px] font-bold tracking-widest text-slate-400 uppercase mb-1">Kematangan</span>
+                        {latestSpbe?.kategori ? (
+                          <Badge className={cn("border px-3 py-1", getCategoryColor(latestSpbe.kategori))}>
+                            {latestSpbe.kategori}
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-slate-50 text-slate-700 border border-slate-200 px-3 py-1">Belum Ada Data</Badge>
+                        )}
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-6">
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={spbeTrendData}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis dataKey="tahun" fontSize={11} stroke="#94a3b8" />
+                          <YAxis domain={[2.0, 5.0]} fontSize={11} stroke="#94a3b8" />
+                          <Tooltip
+                            formatter={(value: any, name: any, props: any) => [`${value} (${props.payload.kategori || 'Baik'})`, 'Nilai']}
+                            contentStyle={{ background: "#1e293b", border: "none", borderRadius: 8, color: "#fff", padding: "8px 12px" }}
+                            labelStyle={{ fontWeight: "bold", color: "#94a3b8", fontSize: 11, marginBottom: 4 }}
+                            itemStyle={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="indeks"
+                            stroke="#1e40af"
+                            strokeWidth={3}
+                            dot={{ r: 4, stroke: "#1e40af", strokeWidth: 2, fill: "#ffffff" }}
+                            activeDot={{ r: 6 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Chart 2: Indeks PEMDI */}
+                <Card className="border-slate-200/80 shadow-sm overflow-hidden bg-white">
+                  <CardHeader className="pb-2 border-b border-slate-100">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <CardTitle className="text-xl font-bold text-slate-800 flex items-center gap-1.5">
+                          Indeks PEMDI
+                        </CardTitle>
+                        <CardDescription className="text-xs text-slate-500 mt-1">Progres agregat indeks internal daerah</CardDescription>
+                      </div>
+                      <div className="flex flex-col items-end">
+                        <span className="text-[9px] font-bold tracking-widest text-slate-400 uppercase mb-1">Kematangan</span>
+                        {latestPemdi?.kategori ? (
+                          <Badge className={cn("border px-3 py-1", getCategoryColor(latestPemdi.kategori))}>
+                            {latestPemdi.kategori}
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-slate-50 text-slate-700 border border-slate-200 px-3 py-1">Belum Ada Data</Badge>
+                        )}
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-6">
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={pemdiTrendData}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis dataKey="tahun" fontSize={11} stroke="#94a3b8" />
+                          <YAxis domain={[2.0, 5.0]} fontSize={11} stroke="#94a3b8" />
+                          <Tooltip
+                            formatter={(value: any, name: any, props: any) => [`${value} (${props.payload.kategori || 'Baik'})`, 'Nilai']}
+                            contentStyle={{ background: "#1e293b", border: "none", borderRadius: 8, color: "#fff", padding: "8px 12px" }}
+                            labelStyle={{ fontWeight: "bold", color: "#94a3b8", fontSize: 11, marginBottom: 4 }}
+                            itemStyle={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}
+                            cursor={{ fill: '#f8fafc' }}
+                          />
+                          <Bar dataKey="indeks" fill="url(#indigoGrad)" radius={[4, 4, 0, 0]} barSize={30}>
+                            <defs>
+                              <linearGradient id="indigoGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#3b82f6" stopOpacity={1} />
+                                <stop offset="100%" stopColor="#1e40af" stopOpacity={0.8} />
+                              </linearGradient>
+                            </defs>
+                            {pemdiTrendData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={index === pemdiTrendData.length - 1 ? "url(#indigoGrad)" : "#93c5fd"} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              </>
+            );
+          })()}
         </div>
 
         {/* Indeks Tahun Berjalan Progress Row */}
@@ -334,97 +401,240 @@ export default function LandingPage() {
         </div>
 
         {/* Section 2: Daftar Indikator PEMDI */}
-        <div className="space-y-4">
-          <div className="text-center max-w-2xl mx-auto py-6">
-            <h2 className="text-xl md:text-2xl font-extrabold text-slate-800 tracking-tight">Daftar Indikator PEMDI</h2>
-            <p className="text-xs text-slate-500 mt-1">Rubrik lengkap tingkat kematangan penyelenggaraan pemerintah digital daerah</p>
+        <div className="space-y-6 pt-4">
+          
+          {/* Aspek Tabs Header */}
+          <div className="flex overflow-x-auto gap-3 pb-2 scrollbar-none snap-x">
+            {aspeks.map((aspek, idx) => (
+              <button
+                key={aspek.id}
+                onClick={() => setSelectedAspekId(aspek.id)}
+                className={cn(
+                  "snap-center flex-shrink-0 flex items-center gap-2.5 px-4 py-3 rounded-[1.25rem] text-[11px] font-bold tracking-widest uppercase transition-all shadow-sm border",
+                  selectedAspekId === aspek.id
+                    ? "bg-[#1B4B8A] text-white border-[#1B4B8A]"
+                    : "bg-white text-slate-500 border-slate-100 hover:bg-slate-50"
+                )}
+              >
+                <div className={cn(
+                  "flex items-center justify-center h-5 w-5 rounded bg-white/20 text-[10px]",
+                  selectedAspekId !== aspek.id && "bg-slate-100 text-slate-400"
+                )}>
+                  {idx + 1}
+                </div>
+                {aspek.nama}
+              </button>
+            ))}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            {/* Sidebar list */}
-            <div className="md:col-span-1 space-y-2 max-h-[500px] overflow-y-auto pr-2 scrollbar-thin">
-              {loading ? (
-                <div className="space-y-2">
-                  {[...Array(6)].map((_, i) => (
-                    <div key={i} className="h-12 bg-slate-200 animate-pulse rounded-xl" />
-                  ))}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            {/* Sidebar list (Indikator List) */}
+            <div className="lg:col-span-4 xl:col-span-3">
+              <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
+                <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-4">Daftar Indikator</p>
+                <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 scrollbar-thin">
+                  {loading ? (
+                    <div className="space-y-2">
+                      {[...Array(3)].map((_, i) => (
+                        <div key={i} className="h-24 bg-slate-100 animate-pulse rounded-2xl" />
+                      ))}
+                    </div>
+                  ) : filteredIndikators.length === 0 ? (
+                    <div className="text-xs text-slate-400 italic text-center py-6">Belum ada indikator</div>
+                  ) : (
+                    filteredIndikators.map(ind => (
+                      <button
+                        key={ind.id}
+                        onClick={() => setSelectedIndikatorId(ind.id)}
+                        className={cn(
+                          "w-full text-left p-4 rounded-2xl border transition-all cursor-pointer flex gap-4",
+                          selectedIndikatorId === ind.id
+                            ? "bg-[#f8fbff] border-blue-400 shadow-sm"
+                            : "bg-white border-slate-100 hover:border-slate-300"
+                        )}
+                      >
+                        <div className={cn(
+                          "flex items-center justify-center h-7 px-2.5 rounded-lg text-[11px] font-bold shrink-0",
+                          selectedIndikatorId === ind.id ? "bg-[#1B4B8A] text-white" : "bg-slate-100 text-slate-500"
+                        )}>
+                          {ind.kode}
+                        </div>
+                        <div className="space-y-2">
+                          <span className={cn(
+                            "line-clamp-3 text-xs font-bold leading-relaxed",
+                            selectedIndikatorId === ind.id ? "text-[#1B4B8A]" : "text-slate-700"
+                          )}>
+                            {ind.nama}
+                          </span>
+                          <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">Bobot: {(ind.bobot * 100).toFixed(2)}%</p>
+                        </div>
+                      </button>
+                    ))
+                  )}
                 </div>
-              ) : (
-                indikators.map(ind => (
-                  <button
-                    key={ind.id}
-                    onClick={() => setSelectedIndikatorId(ind.id)}
-                    className={cn(
-                      "w-full text-left p-3 rounded-xl border text-xs font-semibold transition-all flex items-start gap-2.5 cursor-pointer",
-                      selectedIndikatorId === ind.id
-                        ? "bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-600/10"
-                        : "bg-white border-slate-200 hover:border-indigo-400 text-slate-700"
-                    )}
-                  >
-                    <Badge className={cn("text-[9px] font-mono border-none py-0.5", selectedIndikatorId === ind.id ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600")}>
-                      {ind.kode}
-                    </Badge>
-                    <span className="line-clamp-2 leading-relaxed">{ind.nama}</span>
-                  </button>
-                ))
-              )}
+              </div>
             </div>
 
             {/* Detail view right */}
-            <div className="md:col-span-3">
+            <div className="lg:col-span-8 xl:col-span-9">
               {selectedInd ? (
-                <Card className="border-slate-200/80 shadow-sm bg-white h-full">
-                  <CardHeader className="pb-3 border-b border-slate-100">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <Badge className="bg-indigo-50 text-indigo-700 border-none font-mono font-bold text-[10px]">
-                          {selectedInd.kode}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground font-semibold">
-                          Domain: {selectedInd.aspek?.nama || "Aspek Utama"}
-                        </span>
-                      </div>
-                      <CardTitle className="text-base font-bold text-slate-800 leading-snug">
-                        {selectedInd.nama}
-                      </CardTitle>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-4 space-y-4">
-                    <div className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-4 rounded-xl border border-slate-100">
-                      <p className="font-semibold text-slate-700 mb-1">Deskripsi Indikator:</p>
-                      Indikator ini mengukur keselarasan, kematangan, dan kualitas implementasi arsitektur infrastruktur, tata kelola, dan kebijakan pelaksanaan layanan pemerintah digital di lingkungan perangkat daerah terkait.
-                    </div>
+                <div className="bg-white rounded-[2rem] border border-slate-100 p-8 shadow-sm h-full">
+                  
+                  {/* Indikator Header */}
+                  <div className="mb-6">
+                    <span className="inline-block bg-blue-50 text-[#1B4B8A] px-3 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase mb-4">
+                      {selectedInd.aspek?.nama || "Aspek"}
+                    </span>
+                    <h2 className="text-2xl md:text-3xl font-extrabold text-slate-800 leading-snug mb-4">
+                      {selectedInd.nama}
+                    </h2>
+                    <p className="text-sm text-slate-600 leading-relaxed max-w-4xl">
+                      {selectedInd.nama.includes("Tata Kelola") 
+                        ? "Tata kelola Pemdi adalah kerangka kerja yang memastikan terlaksananya perencanaan, pelaksanaan, dan pengendalian dalam penerapan Pemdi secara terpadu." 
+                        : "Indikator ini mengukur keselarasan, kematangan, dan kualitas implementasi terkait pelaksanaan layanan pemerintah digital di lingkungan instansi."}
+                    </p>
+                  </div>
 
-                    <div className="space-y-3">
-                      <h4 className="text-xs font-bold text-slate-800">Rubrik Tingkat Kematangan (Level 1 - 5)</h4>
-                      
-                      <div className="divide-y divide-slate-100 border border-slate-200/80 rounded-xl overflow-hidden bg-white text-xs">
-                        {rubrikData.length === 0 ? (
-                          <div className="p-8 text-center text-slate-400 italic">
-                            Rubrik level untuk indikator ini belum diisi.
-                          </div>
-                        ) : (
-                          rubrikData.map((level) => (
-                            <div key={level.id} className="p-4 flex flex-col sm:flex-row gap-3 hover:bg-slate-50/50 transition-colors">
-                              <div className="sm:w-28 flex-shrink-0">
-                                <Badge className="bg-teal-50 text-teal-700 border-none font-bold text-[10px] w-20 justify-center">
-                                  Level {level.level}
-                                </Badge>
-                                <p className="text-[10px] text-slate-400 mt-1 font-semibold italic">{level.predikat}</p>
-                              </div>
-                              <div className="flex-1 text-slate-600 leading-relaxed text-xs">
-                                {level.deskripsi || <span className="text-slate-300 italic">Tidak ada deskripsi</span>}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
+                  {/* Toggle Modes */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between border-t border-slate-100 pt-6 mb-6 gap-4">
+                    <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">
+                      {rubrikViewMode === "fokus" ? "Detail Tingkat Kematangan" : "Perbandingan Level Kematangan"}
+                    </p>
+                    <div className="flex bg-slate-50 rounded-full p-1 border border-slate-100">
+                      <button 
+                        onClick={() => setRubrikViewMode("fokus")}
+                        className={cn("px-4 py-2 rounded-full text-[10px] font-bold tracking-widest uppercase transition-all", rubrikViewMode === "fokus" ? "bg-white shadow text-[#1B4B8A]" : "text-slate-500 hover:text-slate-800")}
+                      >
+                        Tab Fokus
+                      </button>
+                      <button 
+                        onClick={() => setRubrikViewMode("matriks")}
+                        className={cn("px-4 py-2 rounded-full text-[10px] font-bold tracking-widest uppercase transition-all", rubrikViewMode === "matriks" ? "bg-white shadow text-[#1B4B8A]" : "text-slate-500 hover:text-slate-800")}
+                      >
+                        Tabel Matriks
+                      </button>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+
+                  {/* Conditional Rendering based on Mode */}
+                  {rubrikData.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 italic bg-slate-50 rounded-2xl border border-dashed">
+                      Rubrik level untuk indikator ini belum diisi.
+                    </div>
+                  ) : rubrikViewMode === "fokus" ? (
+                    <div className="space-y-6">
+                      {/* Level Buttons */}
+                      <div className="flex flex-wrap gap-3">
+                        {[1, 2, 3, 4, 5].map(lvl => {
+                          const hasData = rubrikData.some(r => r.level === lvl)
+                          return (
+                            <button
+                              key={lvl}
+                              disabled={!hasData}
+                              onClick={() => setSelectedLevelId(lvl)}
+                              className={cn(
+                                "px-6 py-2.5 rounded-full text-xs font-bold transition-all border",
+                                selectedLevelId === lvl
+                                  ? "bg-slate-700 text-white border-slate-700 shadow-md"
+                                  : hasData ? "bg-white text-slate-600 border-slate-200 hover:border-slate-400" : "bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed"
+                              )}
+                            >
+                              LEVEL {lvl}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      
+                      {/* Level Header */}
+                      {selectedRubrik && (
+                        <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 flex items-center gap-4">
+                          <div className="h-10 w-10 shrink-0 bg-slate-600 rounded-xl flex items-center justify-center text-white font-bold">
+                            L{selectedLevelId}
+                          </div>
+                          <div>
+                            <h3 className="text-base font-bold text-[#1B4B8A]">
+                              {selectedRubrik.predikat.split(" ")[0]} ({selectedRubrik.predikat})
+                            </h3>
+                            <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase mt-0.5">Kriteria Tingkat Kematangan Indikator</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Info Cards (Mocked content parsed from deskripsi) */}
+                      {selectedRubrik && (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          <div className="border border-slate-100 rounded-2xl p-6 bg-white shadow-sm flex flex-col">
+                            <h4 className="text-[11px] font-bold text-slate-400 tracking-widest uppercase flex items-center gap-2 mb-4">
+                              <FileText className="h-4 w-4 text-blue-500" /> Kriteria
+                            </h4>
+                            <p className="text-sm text-slate-700 leading-relaxed">
+                              {selectedRubrik.deskripsi}
+                            </p>
+                          </div>
+                          <div className="border border-slate-100 rounded-2xl p-6 bg-white shadow-sm flex flex-col">
+                            <h4 className="text-[11px] font-bold text-slate-400 tracking-widest uppercase flex items-center gap-2 mb-4">
+                              <Activity className="h-4 w-4 text-orange-500" /> Kondisi
+                            </h4>
+                            <ul className="text-sm text-slate-700 leading-relaxed list-decimal pl-4 space-y-2">
+                              <li>Pelaksanaan sesuai kriteria indikator yang ditetapkan.</li>
+                              <li>Telah dimanfaatkan untuk perencanaan yang mendukung.</li>
+                            </ul>
+                          </div>
+                          <div className="border border-slate-100 rounded-2xl p-6 bg-white shadow-sm flex flex-col">
+                            <h4 className="text-[11px] font-bold text-slate-400 tracking-widest uppercase flex items-center gap-2 mb-4">
+                              <BookOpen className="h-4 w-4 text-emerald-500" /> Bukti Dukung
+                            </h4>
+                            <ul className="text-sm text-slate-700 leading-relaxed list-decimal pl-4 space-y-2">
+                              <li>Dokumen rancangan strategis instansi.</li>
+                              <li>Laporan pelaksanaan kegiatan operasional.</li>
+                            </ul>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* Matrix View */
+                    <div className="overflow-x-auto border border-slate-100 rounded-2xl shadow-sm">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-100">
+                            <th className="p-4 text-[10px] font-bold text-slate-400 tracking-widest uppercase border-r border-slate-100 w-24 align-bottom">Elemen</th>
+                            {[1, 2, 3, 4, 5].map(lvl => {
+                              const r = rubrikData.find(x => x.level === lvl)
+                              return (
+                                <th key={lvl} className="p-4 border-r border-slate-100 align-top min-w-[200px] text-center">
+                                  <div className="flex flex-col items-center gap-2">
+                                    <div className="h-8 w-8 rounded-full border border-slate-300 flex items-center justify-center text-xs font-bold text-slate-500">
+                                      L{lvl}
+                                    </div>
+                                    <span className="text-[9px] font-bold text-slate-400 tracking-widest uppercase">{r ? r.predikat : "N/A"}</span>
+                                  </div>
+                                </th>
+                              )
+                            })}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="p-4 text-[10px] font-bold text-slate-400 tracking-widest uppercase border-r border-slate-100 bg-white">Kriteria</td>
+                            {[1, 2, 3, 4, 5].map(lvl => {
+                              const r = rubrikData.find(x => x.level === lvl)
+                              return (
+                                <td key={lvl} className="p-4 border-r border-slate-100 bg-white align-top text-xs text-slate-600 leading-relaxed">
+                                  {r ? r.deskripsi : "-"}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                </div>
               ) : (
-                <div className="flex h-full items-center justify-center border border-dashed rounded-2xl p-8 bg-white/50 text-slate-400 italic text-xs">
-                  Pilih indikator di panel kiri untuk melihat rincian rubrik
+                <div className="flex h-full items-center justify-center border border-dashed border-slate-200 rounded-3xl p-12 bg-slate-50/50 text-slate-400 font-semibold">
+                  Pilih indikator untuk melihat rincian rubrik
                 </div>
               )}
             </div>
@@ -485,18 +695,18 @@ export default function LandingPage() {
                       <div className="flex-1 space-y-1">
                         <div className="flex items-center gap-2">
                           <Badge className="bg-slate-100 text-slate-600 border-none font-semibold text-[9px] py-0">
-                            {doc.category}
+                            {doc.kategori}
                           </Badge>
                           <span className="text-[10px] text-slate-400 font-medium">
-                            {doc.type} • {doc.size}
+                            {doc.tipe} • {doc.ukuran}
                           </span>
                         </div>
                         <h4 className="text-xs font-bold text-slate-800 leading-snug group-hover:text-indigo-600 transition-colors">
-                          {doc.title}
+                          {doc.judul}
                         </h4>
                       </div>
                       <button
-                        onClick={() => alert(`Mengunduh dokumen: ${doc.title}`)}
+                        onClick={() => alert(`Mengunduh dokumen: ${doc.judul}`)}
                         className="p-2 rounded-lg hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer"
                         title="Unduh Dokumen"
                       >
