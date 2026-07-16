@@ -14,6 +14,7 @@ import {
   Shield,
   Mail,
   User as UserIcon,
+  Key,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -121,6 +122,17 @@ export default function PenggunaPage() {
     selectedPdId: ''
   })
 
+  const [resetPasswordModal, setResetPasswordModal] = useState<{
+    isOpen: boolean
+    username: string
+    email: string
+    generatedPassword?: string
+  }>({
+    isOpen: false,
+    username: "",
+    email: "",
+  })
+
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean
     id: string
@@ -134,6 +146,21 @@ export default function PenggunaPage() {
     title: '',
     description: ''
   })
+
+  const handleResetPassword = (username: string, email: string) => {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    let newPassword = ""
+    for (let i = 0; i < 8; i++) {
+      newPassword += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+
+    setResetPasswordModal({
+      isOpen: true,
+      username,
+      email,
+      generatedPassword: newPassword,
+    })
+  }
 
   const [mounted, setMounted] = useState(false)
   useEffect(() => {
@@ -498,6 +525,15 @@ export default function PenggunaPage() {
                             title="Edit Pengguna"
                           >
                             <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
+                            onClick={() => handleResetPassword(user.nama, user.email)}
+                            title="Reset Kata Sandi Acak"
+                          >
+                            <Key className="h-3.5 w-3.5" />
                           </Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => confirmDeleteUser(user.id, user.nama)} title="Hapus Pengguna">
                             <Trash2 className="h-3.5 w-3.5" />
@@ -922,6 +958,61 @@ export default function PenggunaPage() {
                 </Button>
                 <Button variant="destructive" size="sm" onClick={executeDelete} className="text-xs">
                   Ya, Hapus
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      , document.body)}
+
+      {/* ============================================================ */}
+      {/* 5. MODAL: RESET PASSWORD ACAK */}
+      {/* ============================================================ */}
+      {mounted && resetPasswordModal.isOpen && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+          <Card className="w-full max-w-sm shadow-2xl border-white/20 glass animate-scale-up text-left">
+            <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-white/10">
+              <CardTitle className="text-base text-foreground font-bold flex items-center gap-2">
+                <Key className="h-4.5 w-4.5 text-amber-500" />
+                Reset Kata Sandi
+              </CardTitle>
+              <button
+                onClick={() => setResetPasswordModal({ ...resetPasswordModal, isOpen: false })}
+                className="rounded-lg p-1 text-muted-foreground hover:bg-muted/80 transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-4">
+              <div className="text-xs space-y-2 text-foreground">
+                <p>
+                  Kata sandi acak baru untuk pengguna <strong>{resetPasswordModal.username}</strong> ({resetPasswordModal.email}) berhasil dibuat:
+                </p>
+                <div className="bg-muted p-3 rounded-lg text-center font-mono text-base font-bold tracking-wider select-all border border-white/10 text-primary">
+                  {resetPasswordModal.generatedPassword}
+                </div>
+                <p className="text-muted-foreground text-[10px] italic">
+                  *Silakan salin kata sandi di atas dan bagikan kepada pengguna tersebut. Kata sandi ini dapat langsung digunakan untuk masuk sistem.
+                </p>
+              </div>
+              <div className="flex gap-2 justify-end pt-3 border-t border-white/10">
+                <Button
+                  onClick={() => {
+                    navigator.clipboard.writeText(resetPasswordModal.generatedPassword || "")
+                    alert("Kata sandi berhasil disalin ke clipboard!")
+                  }}
+                  size="sm"
+                  className="text-xs"
+                >
+                  Salin Kata Sandi
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setResetPasswordModal({ ...resetPasswordModal, isOpen: false })}
+                  className="text-xs"
+                >
+                  Tutup
                 </Button>
               </div>
             </CardContent>
