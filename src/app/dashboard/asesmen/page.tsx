@@ -155,7 +155,7 @@ export default function AsesmenPage() {
           skor: data.skor,
           justifikasi: data.justifikasi,
           status: status,
-          disimpan_at: new Date().toISOString()
+          updated_at: new Date().toISOString()
         }))
 
       if (recordsToUpsert.length > 0) {

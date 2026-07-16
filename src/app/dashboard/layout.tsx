@@ -1,9 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Sidebar } from "@/components/dashboard/sidebar"
 import { Navbar } from "@/components/dashboard/navbar"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/context/auth-context"
+import { usePathname, useRouter } from "next/navigation"
 
 export default function DashboardLayout({
   children,
@@ -11,6 +13,27 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const [collapsed, setCollapsed] = useState(false)
+  const { role, loading } = useAuth()
+  const pathname = usePathname()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (loading) return
+
+    const permissions: Record<string, string[]> = {
+      "/dashboard/asesmen": ["perangkat_daerah"],
+      "/dashboard/konsolidasi": ["perangkat_daerah"],
+      "/dashboard/review": ["admin_pemda"],
+      "/dashboard/referensi": ["super_admin", "admin_pemda"],
+      "/dashboard/pengguna": ["super_admin", "admin_pemda"],
+      "/dashboard/periode": ["super_admin", "admin_pemda"],
+    }
+
+    const restrictedRoles = permissions[pathname]
+    if (restrictedRoles && !restrictedRoles.includes(role)) {
+      router.replace("/dashboard")
+    }
+  }, [role, pathname, loading, router])
 
   return (
     <div className="min-h-screen bg-background">

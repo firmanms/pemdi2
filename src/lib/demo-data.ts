@@ -215,7 +215,7 @@ export function generateDemoPenilaianOPD(): PenilaianOPD[] {
         skor,
         justifikasi: `Justifikasi penilaian ${ind.nama} oleh ${pd.nama}`,
         status: statuses[pdIdx],
-        disimpan_at: '2026-03-15',
+        updated_at: '2026-03-15',
         created_at: '2026-03-15',
       })
     })

@@ -89,19 +89,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Update user representation when role or OPD changes
   useEffect(() => {
     const selectedOPD = availableOPDs.find(o => o.id === perangkatDaerahId)
+    const email = localStorage.getItem('pemdi_user_email') || 
+                  (role === 'super_admin' ? 'super@pemdigital.go.id' :
+                   role === 'admin_pemda' ? 'admin@diskominfo.go.id' :
+                   role === 'viewer' ? 'kepaladaerah@pemkot.go.id' :
+                   `operator@${selectedOPD?.kode?.toLowerCase() || 'opd'}.go.id`)
+    const nama = localStorage.getItem('pemdi_user_name') ||
+                 (role === 'super_admin' ? 'Super Admin' : 
+                  role === 'admin_pemda' ? 'Admin Pemda (Diskominfo)' :
+                  role === 'viewer' ? 'Pimpinan / Kepala Daerah' :
+                  `Operator ${selectedOPD?.nama || 'OPD'}`)
+
     setUser({
       id: '00000000-0000-0000-0000-000000000001',
       auth_id: '00000000-0000-0000-0000-000000000001',
       instansi_id: 'd1000000-0000-0000-0000-000000000001',
       perangkat_daerah_id: role === 'perangkat_daerah' ? perangkatDaerahId : null,
-      nama: role === 'super_admin' ? 'Super Admin' : 
-            role === 'admin_pemda' ? 'Admin Pemda (Diskominfo)' :
-            role === 'viewer' ? 'Pimpinan / Kepala Daerah' :
-            `Operator ${selectedOPD?.nama || 'OPD'}`,
-      email: role === 'super_admin' ? 'super@pemdigital.go.id' :
-             role === 'admin_pemda' ? 'admin@diskominfo.go.id' :
-             role === 'viewer' ? 'kepaladaerah@pemkot.go.id' :
-             `operator@${selectedOPD?.kode?.toLowerCase() || 'opd'}.go.id`,
+      nama: nama,
+      email: email,
       role: role,
       created_at: new Date().toISOString()
     })

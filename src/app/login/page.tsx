@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { supabase } from "@/lib/supabase/client"
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
@@ -15,11 +16,43 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!email.trim()) {
+      alert("Email wajib diisi!")
+      return
+    }
+
     setLoading(true)
-    // Demo: redirect to dashboard after short delay
-    setTimeout(() => {
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', email.trim().toLowerCase())
+        .single()
+
+      if (error || !profile) {
+        alert("Email tidak terdaftar sebagai pengguna!")
+        setLoading(false)
+        return
+      }
+
+      if (!profile.is_active) {
+        alert("Akun Anda dinonaktifkan oleh administrator.")
+        setLoading(false)
+        return
+      }
+
+      // Save user info and preferences to localStorage
+      localStorage.setItem('pemdi_role', profile.role)
+      localStorage.setItem('pemdi_opd_id', profile.perangkat_daerah_id || '')
+      localStorage.setItem('pemdi_user_email', profile.email)
+      localStorage.setItem('pemdi_user_name', profile.nama)
+
       window.location.href = "/dashboard"
-    }, 800)
+    } catch (err: any) {
+      console.error("Login error:", err)
+      alert("Terjadi kesalahan saat masuk: " + err.message)
+      setLoading(false)
+    }
   }
 
   return (

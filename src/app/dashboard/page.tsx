@@ -193,7 +193,7 @@ export default function DashboardPage() {
                     {indeksResult.predikat}
                   </Badge>
                   <span className="text-xl font-bold tabular-nums">
-                    {formatNumber(indeksResult.indeks)}
+                    {formatNumber(indeksResult.skor_1_5)}
                   </span>
                 </div>
               </div>

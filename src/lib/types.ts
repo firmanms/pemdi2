@@ -112,7 +112,7 @@ export interface PenilaianOPD {
   skor: number | null
   justifikasi: string
   status: PenilaianStatus
-  disimpan_at: string
+  updated_at?: string
   created_at: string
   // Joined fields
   indikator?: Indikator
