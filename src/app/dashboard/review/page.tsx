@@ -127,7 +127,7 @@ export default function ReviewPage() {
         justifikasi_konsolidasi: selectedPenilaian.justifikasi_konsolidasi,
         status: status,
         catatan_revisi: status === 'dikembalikan' ? catatan : selectedPenilaian.catatan_revisi,
-        direview_oleh: user?.id || null,
+        direview_oleh: null, // bypassing dummy user FK constraint
         direview_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }

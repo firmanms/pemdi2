@@ -183,7 +183,7 @@ export default function KonsolidasiPage() {
         skor_final: skorFinal,
         justifikasi_konsolidasi: justifikasi,
         ditetapkan_oleh_pd_id: perangkatDaerahId,
-        ditetapkan_oleh_user_id: user?.id || null,
+        ditetapkan_oleh_user_id: null, // bypassing dummy user FK constraint
         status: 'disetor',
         updated_at: new Date().toISOString()
       }

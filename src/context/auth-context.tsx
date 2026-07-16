@@ -90,8 +90,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const selectedOPD = availableOPDs.find(o => o.id === perangkatDaerahId)
     setUser({
-      id: 'demo-user-id',
-      auth_id: 'demo-auth-id',
+      id: '00000000-0000-0000-0000-000000000001',
+      auth_id: '00000000-0000-0000-0000-000000000001',
       instansi_id: 'd1000000-0000-0000-0000-000000000001',
       perangkat_daerah_id: role === 'perangkat_daerah' ? perangkatDaerahId : null,
       nama: role === 'super_admin' ? 'Super Admin' : 

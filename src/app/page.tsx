@@ -73,11 +73,14 @@ export default function LandingPage() {
         setPemdiTrendData(pemdiData || [])
         setDocuments(docData || [])
 
-        // Fetch live index for active period
-        const { data: activePeriodeList } = await supabase.from('periode_asesmen').select('*').eq('status', 'aktif').limit(1)
-        if (activePeriodeList && activePeriodeList.length > 0) {
-          const result = await hitungIndeksKalkulator('', activePeriodeList[0].id)
-          setLiveIndeks(result)
+        // Fetch live index for active period (matching auth-context logic: draft or dibuka)
+        const { data: periodes } = await supabase.from('periode_asesmen').select('*')
+        if (periodes && periodes.length > 0) {
+          const active = periodes.find(p => p.status === 'draft' || p.status === 'dibuka') || periodes[0]
+          if (active) {
+            const result = await hitungIndeksKalkulator('', active.id)
+            setLiveIndeks(result)
+          }
         }
       } catch (e) {
         console.error("Error loading landing content:", e)

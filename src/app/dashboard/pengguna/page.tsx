@@ -804,7 +804,9 @@ export default function PenggunaPage() {
                   <option value="Dinas" className="text-black">Dinas</option>
                   <option value="Badan" className="text-black">Badan</option>
                   <option value="Sekretariat" className="text-black">Sekretariat</option>
+                  <option value="Inspektorat" className="text-black">Inspektorat</option>
                   <option value="Kecamatan" className="text-black">Kecamatan</option>
+                  <option value="Rumah Sakit" className="text-black">Rumah Sakit</option>
                 </select>
               </div>
 
