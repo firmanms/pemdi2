@@ -35,7 +35,7 @@ export function TrendChart({ data }: TrendChartProps) {
             axisLine={{ stroke: "var(--border)" }}
           />
           <YAxis
-            domain={[0, 100]}
+            domain={[1, 5]}
             tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
             axisLine={{ stroke: "var(--border)" }}
           />

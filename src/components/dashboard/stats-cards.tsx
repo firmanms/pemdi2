@@ -21,7 +21,7 @@ export function StatsCards({ stats }: StatsCardsProps) {
     {
       title: "Indeks Akhir",
       value: formatNumber(stats.indeksAkhir),
-      subtitle: "dari 100",
+      subtitle: "dari 5.00",
       icon: BarChart3,
       gradient: "from-teal-500 to-emerald-500",
       iconBg: "bg-teal-500/10 text-teal-600 dark:text-teal-400",

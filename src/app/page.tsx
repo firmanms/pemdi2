@@ -36,6 +36,7 @@ import {
 } from "recharts"
 import { cn } from "@/lib/utils"
 import { supabase } from "@/lib/supabase/client"
+import { hitungIndeksKalkulator } from "@/lib/scoring"
 import type { Aspek, Indikator, RubrikLevel } from "@/lib/types"
 
 // Local landing page content loaded dynamically
@@ -58,6 +59,7 @@ export default function LandingPage() {
   const [spbeTrendData, setSpbeTrendData] = useState<any[]>([])
   const [pemdiTrendData, setPemdiTrendData] = useState<any[]>([])
   const [documents, setDocuments] = useState<any[]>([])
+  const [liveIndeks, setLiveIndeks] = useState<any>(null)
 
   // Load landing page content from Supabase
   useEffect(() => {
@@ -70,6 +72,13 @@ export default function LandingPage() {
         setSpbeTrendData(spbeData || [])
         setPemdiTrendData(pemdiData || [])
         setDocuments(docData || [])
+
+        // Fetch live index for active period
+        const { data: activePeriodeList } = await supabase.from('periode_asesmen').select('*').eq('status', 'aktif').limit(1)
+        if (activePeriodeList && activePeriodeList.length > 0) {
+          const result = await hitungIndeksKalkulator('', activePeriodeList[0].id)
+          setLiveIndeks(result)
+        }
       } catch (e) {
         console.error("Error loading landing content:", e)
       }
@@ -140,8 +149,20 @@ export default function LandingPage() {
     fetchRubrik()
   }, [selectedIndikatorId])
 
-  // Get current data for render
   const selectedInd = indikators.find(i => i.id === selectedIndikatorId)
+  
+  const latestSpbe = spbeTrendData.length > 0 ? spbeTrendData[spbeTrendData.length - 1] : null;
+  const latestPemdi = pemdiTrendData.length > 0 ? pemdiTrendData[pemdiTrendData.length - 1] : null;
+  
+  const getCategoryColor = (kategori: string) => {
+    const k = kategori?.toLowerCase() || '';
+    if (k.includes('sangat baik') || k.includes('memuaskan')) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    if (k.includes('baik')) return 'bg-teal-50 text-teal-700 border-teal-200';
+    if (k.includes('cukup')) return 'bg-blue-50 text-blue-700 border-blue-200';
+    if (k.includes('kurang') && !k.includes('sangat')) return 'bg-orange-50 text-orange-700 border-orange-200';
+    if (k.includes('sangat kurang') || k.includes('initiate')) return 'bg-red-50 text-red-700 border-red-200';
+    return 'bg-slate-50 text-slate-700 border-slate-200';
+  };
   const filteredIndikators = indikators.filter(i => i.aspek_id === selectedAspekId)
   const selectedRubrik = rubrikData.find(r => r.level === selectedLevelId)
 
@@ -188,19 +209,6 @@ export default function LandingPage() {
       <section className="py-8 px-6 max-w-7xl mx-auto space-y-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {(() => {
-            const latestSpbe = spbeTrendData.length > 0 ? spbeTrendData[spbeTrendData.length - 1] : null;
-            const latestPemdi = pemdiTrendData.length > 0 ? pemdiTrendData[pemdiTrendData.length - 1] : null;
-            
-            const getCategoryColor = (kategori: string) => {
-              const k = kategori?.toLowerCase() || '';
-              if (k.includes('sangat baik')) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-              if (k.includes('baik')) return 'bg-teal-50 text-teal-700 border-teal-200';
-              if (k.includes('cukup')) return 'bg-blue-50 text-blue-700 border-blue-200';
-              if (k.includes('kurang')) return 'bg-orange-50 text-orange-700 border-orange-200';
-              if (k.includes('sangat kurang')) return 'bg-red-50 text-red-700 border-red-200';
-              return 'bg-slate-50 text-slate-700 border-slate-200';
-            };
-
             return (
               <>
                 {/* Chart 1: Indeks SPBE */}
@@ -310,30 +318,38 @@ export default function LandingPage() {
         </div>
 
         {/* Indeks Tahun Berjalan Progress Row */}
-        <div className="bg-white border border-slate-200/60 shadow-sm rounded-[2rem] p-8 lg:p-10">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-              <h2 className="text-xl md:text-2xl font-extrabold text-slate-800 flex items-center gap-3">
-                <span className="h-2 w-2 rounded-full bg-slate-400" />
-                Indeks Pemdi Tahun Berjalan
-              </h2>
-              <p className="text-[13px] text-slate-500 italic mt-1.5 md:ml-5">Progres nilai evaluasi kinerja pemerintah digital secara mandiri vs target yang ditetapkan</p>
-            </div>
-            <div className="bg-slate-50/80 border border-slate-100 rounded-full px-5 py-2.5 shadow-sm text-[11px] font-bold text-slate-600 tracking-widest uppercase">
-              INITIATE / KURANG
-            </div>
-          </div>
+        {(() => {
+          const displayScore = liveIndeks ? liveIndeks.skor_1_5 : (latestPemdi ? latestPemdi.indeks : 0);
+          const displayPredikat = liveIndeks ? liveIndeks.predikat : (latestPemdi ? latestPemdi.kategori : "BELUM ADA DATA");
+          const percentage = (displayScore / 5.0) * 100;
 
-          <div className="flex justify-between items-end mt-10 mb-8 md:ml-5">
-            <div className="flex items-baseline gap-3">
-              <span className="text-5xl md:text-[64px] font-black text-slate-900 tracking-tighter leading-none">0.30</span>
-              <span className="text-sm md:text-base font-bold text-slate-400">Nilai Mandiri Terkini</span>
-            </div>
-            <div className="text-right flex flex-col items-end gap-1.5">
-              <span className="text-[10px] md:text-xs font-bold text-slate-400 tracking-widest uppercase">Skor Target 2026</span>
-              <span className="text-2xl md:text-3xl font-extrabold text-indigo-700 leading-none">1.00</span>
-            </div>
-          </div>
+          return (
+            <div className="bg-white border border-slate-200/60 shadow-sm rounded-[2rem] p-8 lg:p-10">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <h2 className="text-xl md:text-2xl font-extrabold text-slate-800 flex items-center gap-3">
+                    <span className="h-2 w-2 rounded-full bg-slate-400" />
+                    Indeks Pemdi Tahun Berjalan
+                  </h2>
+                  <p className="text-[13px] text-slate-500 italic mt-1.5 md:ml-5">Progres nilai evaluasi kinerja pemerintah digital secara mandiri vs target yang ditetapkan</p>
+                </div>
+                <div className="bg-slate-50/80 border border-slate-100 rounded-full px-5 py-2.5 shadow-sm text-[11px] font-bold text-slate-600 tracking-widest uppercase">
+                  {displayPredikat}
+                </div>
+              </div>
+
+              <div className="flex justify-between items-end mt-10 mb-8 md:ml-5">
+                <div className="flex items-baseline gap-3">
+                  <span className="text-5xl md:text-[64px] font-black text-slate-900 tracking-tighter leading-none">
+                    {displayScore.toFixed(2)}
+                  </span>
+                  <span className="text-sm md:text-base font-bold text-slate-400">Nilai Mandiri Terkini</span>
+                </div>
+                <div className="text-right flex flex-col items-end gap-1.5">
+                  <span className="text-[10px] md:text-xs font-bold text-slate-400 tracking-widest uppercase">Skor Target 2026</span>
+                  <span className="text-2xl md:text-3xl font-extrabold text-indigo-700 leading-none">1.00</span>
+                </div>
+              </div>
 
           <div className="relative mt-12 mb-2 md:ml-5 md:mr-5">
             {/* Value scale markings */}
@@ -345,8 +361,8 @@ export default function LandingPage() {
               <div className="w-[20%]"></div>
             </div>
 
-            {/* Marker Icon at current value (0.30 = 6% of 5.0) */}
-            <div className="absolute top-[-30px] left-[6%] -translate-x-1/2 flex flex-col items-center z-10">
+            {/* Marker Icon at current value */}
+            <div className="absolute top-[-30px] -translate-x-1/2 flex flex-col items-center z-10" style={{ left: `${percentage}%` }}>
               <div className="h-3.5 w-[3px] bg-slate-500 rounded-full mb-0.5" />
               <div className="h-3.5 w-3.5 rounded-full border-[2.5px] border-slate-500 bg-white" />
             </div>
@@ -354,12 +370,13 @@ export default function LandingPage() {
             {/* The progress bar track */}
             <div className="h-3.5 w-full bg-slate-100 rounded-full relative overflow-hidden flex shadow-inner">
                {/* Gradient Fill representing current value */}
-               <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-indigo-500 via-teal-400 to-emerald-400 rounded-l-full" style={{ width: '6%' }} />
+               <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-indigo-500 via-teal-400 to-emerald-400 rounded-l-full" style={{ width: `${percentage}%` }} />
                
-               {/* Hatched pattern up to target (target 1.0 = 20%. width = 20 - 6 = 14%) */}
-               <div className="absolute top-0 left-[6%] h-full bg-slate-200/50" 
+               {/* Hatched pattern up to target (target 1.0 = 20%) */}
+               <div className="absolute top-0 h-full bg-slate-200/50" 
                     style={{ 
-                      width: '14%', 
+                      left: `${percentage}%`,
+                      width: `${Math.max(0, 20 - percentage)}%`, 
                       backgroundImage: 'repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(148, 163, 184, 0.15) 3px, rgba(148, 163, 184, 0.15) 6px)' 
                     }} 
                />
@@ -378,27 +395,29 @@ export default function LandingPage() {
             <div className="flex w-full mt-6 text-[9px] font-bold text-slate-400 uppercase tracking-widest">
               <div className="w-[30%] pr-4 border-r border-slate-200/70 pt-1">
                 <p>Initiate</p>
-                <p className="mt-0.5">Kurang</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">Kurang</p>
               </div>
               <div className="w-[20%] px-4 border-r border-slate-200/70 pt-1">
                 <p>Emerging</p>
-                <p className="mt-0.5">Cukup</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">Cukup</p>
               </div>
               <div className="w-[20%] px-4 border-r border-slate-200/70 pt-1">
                 <p>Developing</p>
-                <p className="mt-0.5">Baik</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">Baik</p>
               </div>
-              <div className="w-[10%] px-2 border-r border-slate-200/70 pt-1">
-                <p className="truncate">Embedded</p>
-                <p className="mt-0.5 truncate">Sgt Baik</p>
+              <div className="w-[10%] px-4 border-r border-slate-200/70 pt-1">
+                <p>Embedded</p>
+                <p className="text-[10px] text-slate-500 mt-0.5 whitespace-nowrap">Sgt Baik</p>
               </div>
-              <div className="w-[20%] pl-4 text-right pt-1">
+              <div className="w-[20%] px-4 text-right pt-1">
                 <p>Leading</p>
-                <p className="mt-0.5">Memuaskan</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">Memuaskan</p>
               </div>
             </div>
           </div>
         </div>
+        );
+        })()}
 
         {/* Section 2: Daftar Indikator PEMDI */}
         <div className="space-y-6 pt-4">
@@ -466,7 +485,7 @@ export default function LandingPage() {
                           )}>
                             {ind.nama}
                           </span>
-                          <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">Bobot: {(ind.bobot * 100).toFixed(2)}%</p>
+                          <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">Bobot: {ind.bobot}%</p>
                         </div>
                       </button>
                     ))
@@ -488,11 +507,10 @@ export default function LandingPage() {
                     <h2 className="text-2xl md:text-3xl font-extrabold text-slate-800 leading-snug mb-4">
                       {selectedInd.nama}
                     </h2>
-                    <p className="text-sm text-slate-600 leading-relaxed max-w-4xl">
-                      {selectedInd.nama.includes("Tata Kelola") 
-                        ? "Tata kelola Pemdi adalah kerangka kerja yang memastikan terlaksananya perencanaan, pelaksanaan, dan pengendalian dalam penerapan Pemdi secara terpadu." 
-                        : "Indikator ini mengukur keselarasan, kematangan, dan kualitas implementasi terkait pelaksanaan layanan pemerintah digital di lingkungan instansi."}
-                    </p>
+                    <div 
+                      className="text-sm text-slate-600 leading-relaxed max-w-4xl prose prose-sm prose-slate prose-p:my-1 prose-ul:my-1 prose-li:my-0.5 max-w-none"
+                      dangerouslySetInnerHTML={{ __html: selectedInd.deskripsi || "Belum ada deskripsi untuk indikator ini." }}
+                    />
                   </div>
 
                   {/* Toggle Modes */}
@@ -567,27 +585,28 @@ export default function LandingPage() {
                             <h4 className="text-[11px] font-bold text-slate-400 tracking-widest uppercase flex items-center gap-2 mb-4">
                               <FileText className="h-4 w-4 text-blue-500" /> Kriteria
                             </h4>
-                            <p className="text-sm text-slate-700 leading-relaxed">
-                              {selectedRubrik.deskripsi}
-                            </p>
+                            <div 
+                              className="text-sm text-slate-700 leading-relaxed prose prose-sm prose-slate max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0.5"
+                              dangerouslySetInnerHTML={{ __html: selectedRubrik.deskripsi || '-' }}
+                            />
                           </div>
                           <div className="border border-slate-100 rounded-2xl p-6 bg-white shadow-sm flex flex-col">
                             <h4 className="text-[11px] font-bold text-slate-400 tracking-widest uppercase flex items-center gap-2 mb-4">
                               <Activity className="h-4 w-4 text-orange-500" /> Kondisi
                             </h4>
-                            <ul className="text-sm text-slate-700 leading-relaxed list-decimal pl-4 space-y-2">
-                              <li>Pelaksanaan sesuai kriteria indikator yang ditetapkan.</li>
-                              <li>Telah dimanfaatkan untuk perencanaan yang mendukung.</li>
-                            </ul>
+                            <div 
+                              className="text-sm text-slate-700 leading-relaxed prose prose-sm prose-slate max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0.5"
+                              dangerouslySetInnerHTML={{ __html: selectedRubrik.kondisi || '-' }}
+                            />
                           </div>
                           <div className="border border-slate-100 rounded-2xl p-6 bg-white shadow-sm flex flex-col">
                             <h4 className="text-[11px] font-bold text-slate-400 tracking-widest uppercase flex items-center gap-2 mb-4">
                               <BookOpen className="h-4 w-4 text-emerald-500" /> Bukti Dukung
                             </h4>
-                            <ul className="text-sm text-slate-700 leading-relaxed list-decimal pl-4 space-y-2">
-                              <li>Dokumen rancangan strategis instansi.</li>
-                              <li>Laporan pelaksanaan kegiatan operasional.</li>
-                            </ul>
+                            <div 
+                              className="text-sm text-slate-700 leading-relaxed prose prose-sm prose-slate max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0.5"
+                              dangerouslySetInnerHTML={{ __html: selectedRubrik.bukti_dukung || '-' }}
+                            />
                           </div>
                         </div>
                       )}
@@ -615,14 +634,42 @@ export default function LandingPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          <tr>
+                          <tr className="border-b border-slate-100">
                             <td className="p-4 text-[10px] font-bold text-slate-400 tracking-widest uppercase border-r border-slate-100 bg-white">Kriteria</td>
                             {[1, 2, 3, 4, 5].map(lvl => {
                               const r = rubrikData.find(x => x.level === lvl)
                               return (
-                                <td key={lvl} className="p-4 border-r border-slate-100 bg-white align-top text-xs text-slate-600 leading-relaxed">
-                                  {r ? r.deskripsi : "-"}
-                                </td>
+                                <td 
+                                  key={lvl} 
+                                  className="p-4 border-r border-slate-100 bg-white align-top text-xs text-slate-600 leading-relaxed prose prose-sm prose-slate prose-p:my-1 prose-ul:my-1 prose-li:my-0.5"
+                                  dangerouslySetInnerHTML={{ __html: r ? r.deskripsi : "-" }}
+                                />
+                              )
+                            })}
+                          </tr>
+                          <tr className="border-b border-slate-100">
+                            <td className="p-4 text-[10px] font-bold text-slate-400 tracking-widest uppercase border-r border-slate-100 bg-white">Kondisi</td>
+                            {[1, 2, 3, 4, 5].map(lvl => {
+                              const r = rubrikData.find(x => x.level === lvl)
+                              return (
+                                <td 
+                                  key={lvl} 
+                                  className="p-4 border-r border-slate-100 bg-white align-top text-xs text-slate-600 leading-relaxed prose prose-sm prose-slate prose-p:my-1 prose-ul:my-1 prose-li:my-0.5"
+                                  dangerouslySetInnerHTML={{ __html: r?.kondisi || "-" }}
+                                />
+                              )
+                            })}
+                          </tr>
+                          <tr>
+                            <td className="p-4 text-[10px] font-bold text-slate-400 tracking-widest uppercase border-r border-slate-100 bg-white">Bukti Dukung</td>
+                            {[1, 2, 3, 4, 5].map(lvl => {
+                              const r = rubrikData.find(x => x.level === lvl)
+                              return (
+                                <td 
+                                  key={lvl} 
+                                  className="p-4 border-r border-slate-100 bg-white align-top text-xs text-slate-600 leading-relaxed prose prose-sm prose-slate prose-p:my-1 prose-ul:my-1 prose-li:my-0.5"
+                                  dangerouslySetInnerHTML={{ __html: r?.bukti_dukung || "-" }}
+                                />
                               )
                             })}
                           </tr>

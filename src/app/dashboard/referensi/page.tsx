@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { RichTextEditor } from "@/components/ui/rich-text-editor"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Table,
@@ -476,13 +477,12 @@ export default function ReferensiPage() {
                     </div>
                     <div className="md:col-span-2">
                       <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Deskripsi Singkat</label>
-                      <textarea
+                      <RichTextEditor
                         value={isAddingAspek || editingAspek ? editingAspek?.deskripsi || "" : editingIndikator?.deskripsi || ""}
-                        onChange={(e) => {
-                          if (isAddingAspek || editingAspek) setEditingAspek(prev => ({ ...prev, deskripsi: e.target.value }))
-                          else setEditingIndikator(prev => ({ ...prev, deskripsi: e.target.value }))
+                        onChange={(val) => {
+                          if (isAddingAspek || editingAspek) setEditingAspek(prev => ({ ...prev, deskripsi: val }))
+                          else setEditingIndikator(prev => ({ ...prev, deskripsi: val }))
                         }}
-                        className="w-full rounded-md border border-input bg-white px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[80px] resize-none"
                         placeholder="Deskripsi singkat (opsional)..."
                       />
                     </div>
@@ -741,10 +741,9 @@ export default function ReferensiPage() {
                                 <h4 className="text-[11px] font-bold text-slate-400 tracking-widest uppercase flex items-center gap-2 mb-3">
                                   <FileText className="h-4 w-4 text-blue-500" /> Kriteria (Deskripsi)
                                 </h4>
-                                <textarea
+                                <RichTextEditor
                                   value={rubrik.deskripsi}
-                                  onChange={(e) => updateRubrik(idx, "deskripsi", e.target.value)}
-                                  className="w-full flex-1 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[150px] resize-none"
+                                  onChange={(val) => updateRubrik(idx, "deskripsi", val)}
                                   placeholder="Masukkan kriteria utama untuk level ini..."
                                 />
                               </div>
@@ -752,21 +751,19 @@ export default function ReferensiPage() {
                                 <h4 className="text-[11px] font-bold text-slate-400 tracking-widest uppercase flex items-center gap-2 mb-3">
                                   <Activity className="h-4 w-4 text-orange-500" /> Kondisi
                                 </h4>
-                                <textarea
+                                <RichTextEditor
                                   value={rubrik.kondisi || ""}
-                                  onChange={(e) => updateRubrik(idx, "kondisi", e.target.value)}
-                                  className="w-full flex-1 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-orange-500 min-h-[150px] resize-none"
-                                  placeholder="Masukkan rincian kondisi (bisa gunakan angka/bullet)..."
+                                  onChange={(val) => updateRubrik(idx, "kondisi", val)}
+                                  placeholder="Masukkan rincian kondisi..."
                                 />
                               </div>
                               <div className="border border-slate-100 rounded-2xl p-5 bg-white shadow-sm flex flex-col">
                                 <h4 className="text-[11px] font-bold text-slate-400 tracking-widest uppercase flex items-center gap-2 mb-3">
                                   <BookOpen className="h-4 w-4 text-emerald-500" /> Bukti Dukung
                                 </h4>
-                                <textarea
+                                <RichTextEditor
                                   value={rubrik.bukti_dukung || ""}
-                                  onChange={(e) => updateRubrik(idx, "bukti_dukung", e.target.value)}
-                                  className="w-full flex-1 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 min-h-[150px] resize-none"
+                                  onChange={(val) => updateRubrik(idx, "bukti_dukung", val)}
                                   placeholder="Masukkan daftar bukti dukung yang disyaratkan..."
                                 />
                               </div>
@@ -806,9 +803,11 @@ export default function ReferensiPage() {
                                 const idx = rubrikData.findIndex(x => x.level === lvl)
                                 const r = rubrikData[idx]
                                 return (
-                                  <td key={`krit-${lvl}`} className="p-4 border-r border-slate-100 bg-white align-top text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">
-                                    {r?.deskripsi || "-"}
-                                  </td>
+                                  <td 
+                                    key={`krit-${lvl}`} 
+                                    className="p-4 border-r border-slate-100 bg-white align-top text-xs text-slate-600 leading-relaxed prose prose-sm prose-slate prose-p:my-1 prose-ul:my-1 prose-li:my-0.5"
+                                    dangerouslySetInnerHTML={{ __html: r?.deskripsi || "-" }}
+                                  />
                                 )
                               })}
                             </tr>
@@ -819,9 +818,11 @@ export default function ReferensiPage() {
                                 const idx = rubrikData.findIndex(x => x.level === lvl)
                                 const r = rubrikData[idx]
                                 return (
-                                  <td key={`kond-${lvl}`} className="p-4 border-r border-slate-100 border-t border-slate-100 bg-white align-top text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">
-                                    {r?.kondisi || "-"}
-                                  </td>
+                                  <td 
+                                    key={`kond-${lvl}`} 
+                                    className="p-4 border-r border-slate-100 border-t border-slate-100 bg-white align-top text-xs text-slate-600 leading-relaxed prose prose-sm prose-slate prose-p:my-1 prose-ul:my-1 prose-li:my-0.5"
+                                    dangerouslySetInnerHTML={{ __html: r?.kondisi || "-" }}
+                                  />
                                 )
                               })}
                             </tr>
@@ -832,9 +833,11 @@ export default function ReferensiPage() {
                                 const idx = rubrikData.findIndex(x => x.level === lvl)
                                 const r = rubrikData[idx]
                                 return (
-                                  <td key={`bukt-${lvl}`} className="p-4 border-r border-slate-100 border-t border-slate-100 bg-white align-top text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">
-                                    {r?.bukti_dukung || "-"}
-                                  </td>
+                                  <td 
+                                    key={`bukt-${lvl}`} 
+                                    className="p-4 border-r border-slate-100 border-t border-slate-100 bg-white align-top text-xs text-slate-600 leading-relaxed prose prose-sm prose-slate prose-p:my-1 prose-ul:my-1 prose-li:my-0.5"
+                                    dangerouslySetInnerHTML={{ __html: r?.bukti_dukung || "-" }}
+                                  />
                                 )
                               })}
                             </tr>

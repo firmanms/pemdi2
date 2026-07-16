@@ -17,10 +17,10 @@ import type { IndeksResult, DashboardStats } from "@/lib/types"
 
 // Sample historical trend data
 const staticTrendData = [
-  { periode: 'S1 2024', tahun: 2024, indeks: 45.2 },
-  { periode: 'S2 2024', tahun: 2024, indeks: 48.7 },
-  { periode: 'S1 2025', tahun: 2025, indeks: 52.3 },
-  { periode: 'S2 2025', tahun: 2025, indeks: 54.8 },
+  { periode: 'S1 2024', tahun: 2024, indeks: 2.26 },
+  { periode: 'S2 2024', tahun: 2024, indeks: 2.43 },
+  { periode: 'S1 2025', tahun: 2025, indeks: 2.61 },
+  { periode: 'S2 2025', tahun: 2025, indeks: 2.74 },
 ]
 
 export default function DashboardPage() {
@@ -59,7 +59,7 @@ export default function DashboardPage() {
         setStats({
           totalOPD: availableOPDs.length,
           progresIsi: progressPercent,
-          indeksAkhir: result.indeks,
+          indeksAkhir: result.skor_1_5,
           periodeAktif: activePeriode.nama,
           totalIndikator: 20,
           indikatorDisetujui: approvedFinals?.length || 0
@@ -80,7 +80,7 @@ export default function DashboardPage() {
     {
       periode: activePeriode ? activePeriode.nama : 'S1 2026',
       tahun: activePeriode ? activePeriode.tahun : 2026,
-      indeks: indeksResult ? indeksResult.indeks : 0
+      indeks: indeksResult ? indeksResult.skor_1_5 : 0
     }
   ]
 
@@ -117,7 +117,7 @@ export default function DashboardPage() {
             <CardDescription>Nilai kematangan pemerintah digital</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col items-center">
-            <GaugeChart value={indeksResult.indeks} />
+            <GaugeChart value={indeksResult.skor_1_5} />
             <div className="mt-2 text-center space-y-1">
               <Badge className={getScoreBadgeClass(indeksResult.skor_1_5)}>
                 Level {indeksResult.level} — {indeksResult.predikat}

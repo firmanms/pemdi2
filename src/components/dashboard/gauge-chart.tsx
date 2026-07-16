@@ -4,18 +4,21 @@ import { PieChart, Pie, Cell } from "recharts"
 import { getGaugeColor } from "@/lib/utils"
 
 interface GaugeChartProps {
-  value: number // 0-100
+  value: number // 0-maxValue
+  maxValue?: number
   label?: string
   size?: number
 }
 
-export function GaugeChart({ value, label = "Indeks Akhir", size = 220 }: GaugeChartProps) {
-  const normalizedValue = Math.max(0, Math.min(100, value))
-  const color = getGaugeColor(normalizedValue)
+export function GaugeChart({ value, maxValue = 5, label = "Indeks Akhir", size = 220 }: GaugeChartProps) {
+  const normalizedValue = Math.max(0, Math.min(maxValue, value))
+  const percentage = (normalizedValue / maxValue) * 100
+  // use percentage to get gauge color
+  const color = getGaugeColor(percentage)
 
   const data = [
-    { name: "value", value: normalizedValue },
-    { name: "empty", value: 100 - normalizedValue },
+    { name: "value", value: percentage },
+    { name: "empty", value: 100 - percentage },
   ]
 
   return (
@@ -53,7 +56,7 @@ export function GaugeChart({ value, label = "Indeks Akhir", size = 220 }: GaugeC
             className="font-bold tracking-tight"
             style={{ fontSize: size * 0.16, color }}
           >
-            {normalizedValue.toFixed(1)}
+            {normalizedValue.toFixed(2)}
           </span>
           <span className="text-xs text-muted-foreground mt-0.5">{label}</span>
         </div>
