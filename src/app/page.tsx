@@ -38,75 +38,7 @@ import { cn } from "@/lib/utils"
 import { supabase } from "@/lib/supabase/client"
 import type { Aspek, Indikator, RubrikLevel } from "@/lib/types"
 
-// Mock SPBE & PEMDI Trend Data
-const spbeTrendData = [
-  { tahun: 2018, indeks: 2.1 },
-  { tahun: 2019, indeks: 2.3 },
-  { tahun: 2020, indeks: 2.6 },
-  { tahun: 2021, indeks: 2.8 },
-  { tahun: 2022, indeks: 3.2 },
-  { tahun: 2023, indeks: 3.6 },
-]
-
-const pemdiTrendData = [
-  { tahun: 2021, indeks: 1.8 },
-  { tahun: 2022, indeks: 2.4 },
-  { tahun: 2023, indeks: 2.9 },
-  { tahun: 2024, indeks: 3.3 },
-  { tahun: 2025, indeks: 3.7 },
-]
-
-// Mock Knowledge Documents
-const mockDocuments = [
-  {
-    id: 1,
-    title: "Peraturan Menteri PANRB No 59 Tahun 2020 tentang Pemantauan dan Evaluasi SPBE",
-    category: "Kebijakan",
-    type: "PDF",
-    size: "2.4 MB",
-    downloadUrl: "#"
-  },
-  {
-    id: 2,
-    title: "Panduan Pengisian Asesmen Mandiri Indeks Pemerintah Digital Tahun 2026",
-    category: "Penerapan",
-    type: "PDF",
-    size: "1.8 MB",
-    downloadUrl: "#"
-  },
-  {
-    id: 3,
-    title: "Laporan Hasil Evaluasi SPBE & Pemerintah Digital Nasional 2025",
-    category: "Evaluasi",
-    type: "PDF",
-    size: "4.2 MB",
-    downloadUrl: "#"
-  },
-  {
-    id: 4,
-    title: "Bahan Sosialisasi Rubrik Penilaian Indikator Pemerintah Digital",
-    category: "Materi",
-    type: "PPTX",
-    size: "8.5 MB",
-    downloadUrl: "#"
-  },
-  {
-    id: 5,
-    title: "Kebijakan Tata Kelola Keamanan Informasi Pemerintah Daerah",
-    category: "Kebijakan",
-    type: "PDF",
-    size: "1.5 MB",
-    downloadUrl: "#"
-  },
-  {
-    id: 6,
-    title: "Petunjuk Teknis Integrasi Aplikasi Layanan Publik Berbasis API",
-    category: "Penerapan",
-    type: "PDF",
-    size: "3.1 MB",
-    downloadUrl: "#"
-  }
-]
+// Local landing page content loaded dynamically
 
 export default function LandingPage() {
   const [indikators, setIndikators] = useState<Indikator[]>([])
@@ -115,6 +47,28 @@ export default function LandingPage() {
   const [docTab, setDocTab] = useState<string>("Semua")
   const [searchDoc, setSearchDoc] = useState<string>("")
   const [loading, setLoading] = useState(true)
+
+  const [spbeTrendData, setSpbeTrendData] = useState<any[]>([])
+  const [pemdiTrendData, setPemdiTrendData] = useState<any[]>([])
+  const [documents, setDocuments] = useState<any[]>([])
+
+  // Load landing page content from Supabase
+  useEffect(() => {
+    async function fetchLandingContent() {
+      try {
+        const { data: spbeData } = await supabase.from('spbe_trend').select('*').order('tahun')
+        const { data: pemdiData } = await supabase.from('pemdi_trend').select('*').order('tahun')
+        const { data: docData } = await supabase.from('dokumen_pengetahuan').select('*').order('created_at', { ascending: false })
+        
+        setSpbeTrendData(spbeData || [])
+        setPemdiTrendData(pemdiData || [])
+        setDocuments(docData || [])
+      } catch (e) {
+        console.error("Error loading landing content:", e)
+      }
+    }
+    fetchLandingContent()
+  }, [])
 
   // Load Indicators from Supabase
   useEffect(() => {
@@ -163,7 +117,7 @@ export default function LandingPage() {
   const selectedInd = indikators.find(i => i.id === selectedIndikatorId)
 
   // Filtered documents
-  const filteredDocs = mockDocuments.filter(doc => {
+  const filteredDocs = documents.filter(doc => {
     const matchesTab = docTab === "Semua" || doc.category === docTab
     const matchesSearch = doc.title.toLowerCase().includes(searchDoc.toLowerCase())
     return matchesTab && matchesSearch
@@ -289,28 +243,95 @@ export default function LandingPage() {
         </div>
 
         {/* Indeks Tahun Berjalan Progress Row */}
-        <Card className="border-slate-200/80 shadow-sm bg-white overflow-hidden">
-          <CardContent className="py-6 px-6">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-              <div className="flex items-center gap-4">
-                <div className="h-12 w-12 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
-                  <Activity className="h-6 w-6" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-800">Indeks PEMDI Tahun Berjalan (2026)</h3>
-                  <p className="text-xs text-slate-500">Skor rata-rata berjalan berdasarkan penilaian OPD terkonsolidasi</p>
-                </div>
+        <div className="bg-white border border-slate-200/60 shadow-sm rounded-[2rem] p-8 lg:p-10">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <h2 className="text-xl md:text-2xl font-extrabold text-slate-800 flex items-center gap-3">
+                <span className="h-2 w-2 rounded-full bg-slate-400" />
+                Indeks Pemdi Tahun Berjalan
+              </h2>
+              <p className="text-[13px] text-slate-500 italic mt-1.5 md:ml-5">Progres nilai evaluasi kinerja pemerintah digital secara mandiri vs target yang ditetapkan</p>
+            </div>
+            <div className="bg-slate-50/80 border border-slate-100 rounded-full px-5 py-2.5 shadow-sm text-[11px] font-bold text-slate-600 tracking-widest uppercase">
+              INITIATE / KURANG
+            </div>
+          </div>
+
+          <div className="flex justify-between items-end mt-10 mb-8 md:ml-5">
+            <div className="flex items-baseline gap-3">
+              <span className="text-5xl md:text-[64px] font-black text-slate-900 tracking-tighter leading-none">0.30</span>
+              <span className="text-sm md:text-base font-bold text-slate-400">Nilai Mandiri Terkini</span>
+            </div>
+            <div className="text-right flex flex-col items-end gap-1.5">
+              <span className="text-[10px] md:text-xs font-bold text-slate-400 tracking-widest uppercase">Skor Target 2026</span>
+              <span className="text-2xl md:text-3xl font-extrabold text-indigo-700 leading-none">1.00</span>
+            </div>
+          </div>
+
+          <div className="relative mt-12 mb-2 md:ml-5 md:mr-5">
+            {/* Value scale markings */}
+            <div className="absolute top-[-24px] left-0 right-0 w-full flex text-[10px] font-extrabold text-slate-300">
+              <div className="w-[30%] flex justify-end pr-2">1.5</div>
+              <div className="w-[20%] flex justify-end pr-2">2.5</div>
+              <div className="w-[20%] flex justify-end pr-2">3.5</div>
+              <div className="w-[10%] flex justify-end pr-2">4.0</div>
+              <div className="w-[20%]"></div>
+            </div>
+
+            {/* Marker Icon at current value (0.30 = 6% of 5.0) */}
+            <div className="absolute top-[-30px] left-[6%] -translate-x-1/2 flex flex-col items-center z-10">
+              <div className="h-3.5 w-[3px] bg-slate-500 rounded-full mb-0.5" />
+              <div className="h-3.5 w-3.5 rounded-full border-[2.5px] border-slate-500 bg-white" />
+            </div>
+
+            {/* The progress bar track */}
+            <div className="h-3.5 w-full bg-slate-100 rounded-full relative overflow-hidden flex shadow-inner">
+               {/* Gradient Fill representing current value */}
+               <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-indigo-500 via-teal-400 to-emerald-400 rounded-l-full" style={{ width: '6%' }} />
+               
+               {/* Hatched pattern up to target (target 1.0 = 20%. width = 20 - 6 = 14%) */}
+               <div className="absolute top-0 left-[6%] h-full bg-slate-200/50" 
+                    style={{ 
+                      width: '14%', 
+                      backgroundImage: 'repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(148, 163, 184, 0.15) 3px, rgba(148, 163, 184, 0.15) 6px)' 
+                    }} 
+               />
+
+               {/* White Dividers representing segment bounds */}
+               <div className="absolute top-0 left-0 w-full h-full flex pointer-events-none">
+                 <div className="w-[30%] h-full border-r-[2.5px] border-white" />
+                 <div className="w-[20%] h-full border-r-[2.5px] border-white" />
+                 <div className="w-[20%] h-full border-r-[2.5px] border-white" />
+                 <div className="w-[10%] h-full border-r-[2.5px] border-white" />
+                 <div className="w-[20%] h-full" />
+               </div>
+            </div>
+
+            {/* Category Labels below track */}
+            <div className="flex w-full mt-6 text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+              <div className="w-[30%] pr-4 border-r border-slate-200/70 pt-1">
+                <p>Initiate</p>
+                <p className="mt-0.5">Kurang</p>
               </div>
-              <div className="flex-1 max-w-md w-full">
-                <div className="flex items-center justify-between text-xs font-semibold mb-1.5">
-                  <span className="text-slate-600">Realisasi Berjalan: <b className="text-indigo-600">0.30</b></span>
-                  <span className="text-slate-400">Target Akhir: <b>1.20</b></span>
-                </div>
-                <Progress value={25} className="h-2.5 bg-slate-100" />
+              <div className="w-[20%] px-4 border-r border-slate-200/70 pt-1">
+                <p>Emerging</p>
+                <p className="mt-0.5">Cukup</p>
+              </div>
+              <div className="w-[20%] px-4 border-r border-slate-200/70 pt-1">
+                <p>Developing</p>
+                <p className="mt-0.5">Baik</p>
+              </div>
+              <div className="w-[10%] px-2 border-r border-slate-200/70 pt-1">
+                <p className="truncate">Embedded</p>
+                <p className="mt-0.5 truncate">Sgt Baik</p>
+              </div>
+              <div className="w-[20%] pl-4 text-right pt-1">
+                <p>Leading</p>
+                <p className="mt-0.5">Memuaskan</p>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* Section 2: Daftar Indikator PEMDI */}
         <div className="space-y-4">
